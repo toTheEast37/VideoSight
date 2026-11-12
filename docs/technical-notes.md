@@ -1,6 +1,6 @@
 # 技术方案草案
 
-日期：2026-11-12。产品行为以 `requirements-v0.1.md` 为准。用户认可现有基本路线，并指定使用本机 MySQL、阿里云百炼，以及 application-dev.yaml 私密配置规则。具体依赖和客户端版本尚未锁定，尚无应用代码或依赖配置。
+日期：2026-11-12。产品行为以 `requirements-v0.1.md` 为准。用户认可现有基本路线，并指定使用本机 MySQL、阿里云百炼，以及 application-dev.yaml 私密配置规则。T01 已锁定 Java 17、Spring Boot 3.5.16、Maven 3.9.16 和 Wrapper 3.3.4，完成最小工程构建及启动验证；数据库与模型客户端仍待后续任务确定和接入。
 
 ## 字幕材料与用户需求的区别
 
@@ -37,15 +37,16 @@
 
 ## 本地配置约定
 
-- `application.yaml`：可提交的通用非敏感配置。
-- `application-dev.yaml`：用户指定的本地私密配置文件，保存百炼 API key、私密连接信息等；必须被 Git 忽略，不提交。
-- `application-dev.example.yaml`：工程初始化时提供的占位模板，可以提交；不含真实密钥、账号或私密连接信息。
-- 本地启动显式启用 dev 环境，具体命令在 T01 实际运行成功后记录。当前不需要用户提供 API key。
+- `src/main/resources/application.yaml`：可提交的通用非敏感配置，随 JAR 打包；默认监听 `127.0.0.1:8080`，只开放 Actuator 的 health 端点。
+- `config/application-dev.yaml`：用户指定的本地私密配置文件，保存百炼 API key、私密连接信息等；已验证被 Git 忽略且未被跟踪。放在 JAR 外，从仓库根目录启动时由 Spring Boot 默认外部配置搜索路径读取。
+- `config/application-dev.example.yaml`：已提供可提交的无密钥模板。当前仅启用端口，MySQL 字段是注释中的占位值；百炼的具体配置字段待 T05 选择客户端后补充，不预设服务地址或模型名。
+- 本地启动显式启用 dev 环境，两种已验证的启动命令见 README。T01 本地副本仍无密钥，无需用户提供 API key；验证时临时改端口确认 dev 文件被读取，结束后已恢复模板内容。
+- 私密配置与构建产物、运行日志分别由现有忽略规则保护。POM 另排除资源目录中的 `**/application-dev.*`，降低误放入资源目录后被打包的风险；已检查当前 JAR 仅含通用配置，不含 dev 文件或模板。
 - 百炼的具体模型、服务地址与客户端方式在 T05 前确定，按照所用地域和账号配置核对，不凭空填写。参考[百炼官方接入文档](https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope)。
 
 ## AI 框架选型建议
 
-以下是针对本项目学习目标的建议，尚未锁定具体依赖，也未进行集成验证：
+以下是针对本项目学习目标的建议，AI 依赖尚未引入或验证：
 
 - 优先考虑 Spring AI，复用模型调用、消息、工具调用和会话上下文等基础能力；LangChain4j 是可行备选，首版选择其中一个即可。
 - 百炼可评估 Spring AI 的兼容协议接入或 DashScope 适配。使用百炼并不要求同时引入 Spring AI Alibaba 的 Agent/Graph 编排模块。
@@ -56,19 +57,27 @@
 
 参考：[Spring AI ChatClient](https://docs.spring.io/spring-ai/reference/api/chatclient.html)、[Spring AI 会话记忆](https://docs.spring.io/spring-ai/reference/api/chat-memory.html)、[LangChain4j AI Services](https://docs.langchain4j.dev/tutorials/ai-services/)。
 
-版本应成套选择。当前 [Spring AI 入门文档](https://docs.spring.io/spring-ai/reference/getting-started.html)与 [Spring AI Alibaba 版本表](https://www.java2ai.com/docs/versions/)对应的 Spring Boot 版本线并不相同，不能把各项目最新版本任意拼接。T01/T05 按所选接入路线核对并验证，不直接照抄混合版本示例。
+版本应成套选择。T01 根据 [Spring AI 官方兼容表](https://github.com/spring-projects/spring-ai#readme)选择 Spring Boot 3.5 系列，为后续 Spring AI 1.1 系列路线保留兼容基础；并不表示已锁定或验证 AI 客户端。官方当前主线文档可能已经对应其他版本，T05 仍需按所选 Spring AI 或 [Spring AI Alibaba 版本表](https://www.java2ai.com/docs/versions/)核对具体组合，不能任意拼接各项目最新版本。
+
+## T01 工程决策与边界
+
+- 使用一个 Maven 模块和一个 Spring Boot 启动类，当前依赖只有 Web 与 Actuator；没有引入数据库驱动、AI Starter 或前端构建工具，避免在相应功能接入前要求凭据。
+- Spring Boot 父 POM 固定为 3.5.16，Java 编译目标为 17。该版本线的[官方系统要求](https://docs.spring.io/spring-boot/3.5/system-requirements.html)支持 Java 17 和 Maven 3.6.3 及以上；实际构建已使用本机 JDK 17.0.19 与 Wrapper 下载的 Maven 3.9.16。
+- Wrapper 固定为 Apache Maven Wrapper 3.3.4 的 `only-script` 形式，脚本来自 Maven Central 官方发行包，未手写替代下载器；Maven 发行包使用 SHA-512 对照仓库校验值，另将 SHA-256 固定在 Wrapper 配置中供首次下载校验。Wrapper 归档按仓库提供的 SHA-1 校验，脚本复制后再次比较哈希。
+- `GET /actuator/health` 的输入是本机 HTTP 请求，输出是健康 JSON；当前没有业务数据和持久化状态。停止应用后端口不再提供服务，不存在可读取的总结记录。
+- 端口被占用时应用启动失败并以非零状态退出；尚未实现数据库、模型故障或业务失败页面，这些仍由 T03—T05 处理。
 
 ## 技术选择状态
 
 | 项目 | 当前状态与决定时机 |
 | --- | --- |
 | 后端语言 | 用户已指定以 Java 为主。 |
-| Web 框架 | Spring Boot 基本路线获用户认可；具体依赖版本在 T01 确定，并验证兼容性。 |
-| 前端 | 沿用同源简单页面建议，具体工程结构在 T01 确定。 |
-| 构建与 Java 版本 | 当前终端可用 Java/javac 17.0.19；Maven、Gradle 未出现在 PATH。建议 T01 使用 Maven 并提供 Wrapper；尚未生成或验证。Spring Boot 的 Java 最低要求见[官方系统要求](https://docs.spring.io/spring-boot/system-requirements.html)，具体工程及客户端兼容性仍须在实现时核对。 |
+| Web 框架 | T01 已锁定 Spring Boot 3.5.16，使用其父 POM 管理依赖；Web + Actuator 已通过构建与启动验证。 |
+| 前端 | 延续同源简单静态页面路线，T02 放入 `src/main/resources/static`；T01 没有业务页面或独立前端构建。 |
+| 构建与 Java 版本 | Java 编译目标 17，本机 Java/javac 17.0.19；已提供并验证 Wrapper 3.3.4 + Maven 3.9.16，无需全局安装 Maven。Windows 入口已实测，POSIX 脚本已保留但未运行。 |
 | 持久化 | 使用本机 MySQL。已检查到 MySQL 客户端 8.0.46，但服务状态、账号、连接和目标数据库尚未验证。必须跨应用重启保留结果。 |
 | 模型服务 | 用户指定阿里云百炼，之后再配置 API key。具体模型、地址、客户端方式、超时及费用边界待定；尚未调用。 |
 | AI 基础框架 | 当前首选建议为 Spring AI，LangChain4j 为备选；具体接入路线与依赖组合待实现时确定和验证。 |
 | 后续基础设施 | 用户表示本机已有 Redis，但本轮未验证服务连通。首版现有需求尚未使用 Redis；MQ、对象存储和向量库以后按需求评估。 |
 
-本轮只核对了当前终端可见的部分工具，未安装依赖、连接数据库或调用模型。后续在本表记录最终选择及理由；出现需要长期解释的重要取舍时，再增加简短决策记录。
+T01 已下载构建依赖并验证工程；未连接数据库、调用模型或验证业务功能。后续在本表记录客户端与持久化的实际选择，不把工程启动当成 M1 完成。具体命令、失败检查和提交证据见 `tasks.md`。
