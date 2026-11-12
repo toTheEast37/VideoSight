@@ -1,0 +1,15 @@
+# Copy to config/application-dev.yaml, then explicitly activate the dev profile.
+# The local copy is ignored by Git and is outside the packaged JAR.
+# T01 starts without database credentials or a model API key.
+server:
+  port: 8080
+
+# T04: replace placeholders and uncomment only after adding MySQL support.
+# spring:
+#   datasource:
+#     url: "<MYSQL_JDBC_URL>"
+#     username: "<MYSQL_USERNAME>"
+#     password: "<MYSQL_PASSWORD>"
+
+# T05: keep the Bailian API key here after the client property names are chosen.
+# API key placeholder: <BAILIAN_API_KEY>
