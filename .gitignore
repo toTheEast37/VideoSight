@@ -5,6 +5,9 @@
 application-local.properties
 application-local.yml
 application-local.yaml
+application-dev.yaml
+application-dev.yml
+application-dev.properties
 application-secrets.*
 
 # Java build and IDE output
