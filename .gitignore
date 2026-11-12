@@ -1,0 +1,31 @@
+# Private local configuration
+.env
+.env.*
+!.env.example
+application-local.properties
+application-local.yml
+application-local.yaml
+application-secrets.*
+
+# Java build and IDE output
+target/
+build/
+.gradle/
+.idea/
+*.iml
+*.class
+
+# Runtime data and generated files
+data/
+uploads/
+logs/
+outputs/
+work/
+*.log
+*.db
+*.db-*
+*.mv.db
+
+# OS metadata
+Thumbs.db
+.DS_Store
