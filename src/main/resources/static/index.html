@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>视频资料库 · VideoSight</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/upload.js"></script>
+</head>
+<body>
+  <div class="page-shell">
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="VideoSight 首页"><span class="brand-icon" aria-hidden="true">▶</span> VideoSight</a>
+      <span class="local-label"><span aria-hidden="true"></span> 本地视频资料库</span>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="page-title">
+        <p class="eyebrow">从一份视频开始</p>
+        <h1 id="page-title">把视频存好，<br>随时回来继续。</h1>
+        <p class="intro-description">在续传有效期内，刷新页面后重新选择原视频，就能继续上传剩余部分。</p>
+      </section>
+
+      <div class="workspace">
+        <section class="panel upload-panel" aria-labelledby="upload-title">
+          <div class="section-heading">
+            <div><p class="section-index">01 / 上传</p><h2 id="upload-title">添加视频</h2></div>
+            <span class="subtle-label" id="settings-summary">正在获取上传设置…</span>
+          </div>
+
+          <label class="file-picker" id="file-picker" for="video-file">
+            <span class="picker-icon" aria-hidden="true">↑</span>
+            <strong>选择一份视频</strong>
+            <span id="picker-help">支持 MP4、WebM、MOV；浏览器只记住续传信息。</span>
+            <span class="picker-action">浏览文件</span>
+            <input id="video-file" type="file" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov" aria-describedby="picker-help" disabled>
+          </label>
+
+          <div class="selected-file" id="selected-file" hidden>
+            <span class="file-symbol" aria-hidden="true">▶</span>
+            <div class="file-details"><strong id="file-name"></strong><span id="file-meta"></span></div>
+            <span class="file-tag" id="file-tag">待上传</span>
+          </div>
+
+          <div class="progress-section" id="progress-section" hidden>
+            <div class="progress-caption"><span id="progress-label">准备上传</span><strong id="progress-percent">0%</strong></div>
+            <progress id="upload-progress" value="0" max="100" aria-label="上传进度">0%</progress>
+            <p class="progress-detail" id="progress-detail"></p>
+          </div>
+
+          <div class="notice" id="upload-notice" role="status" aria-live="polite">正在连接本地服务…</div>
+          <div class="upload-actions">
+            <button class="button button-primary" id="upload-button" type="button" disabled>开始上传 <span aria-hidden="true">↗</span></button>
+            <button class="button button-secondary" id="pause-button" type="button" hidden>暂停</button>
+            <button class="text-button" id="restart-button" type="button" hidden>重新开始一次上传</button>
+          </div>
+          <p class="upload-footnote">只有完成保存后，视频才会出现在右侧资料库。关闭页面不会删除已经收到的部分。</p>
+
+          <div class="resume-section" id="resume-section" hidden>
+            <div class="resume-heading"><h3>本浏览器的续传记录</h3><span>重新选择对应的原文件即可继续</span></div>
+            <ul class="resume-list" id="resume-list"></ul>
+          </div>
+        </section>
+
+        <section class="panel library-panel" aria-labelledby="library-title">
+          <div class="section-heading">
+            <div><p class="section-index">02 / 资料库 · 最近 100 条</p><h2 id="library-title">已保存的视频 <span id="asset-count" class="count"></span></h2></div>
+            <button class="text-button" id="refresh-assets" type="button">刷新列表 <span aria-hidden="true">↻</span></button>
+          </div>
+          <p class="library-description">上传完成的视频会长期显示在这里，刷新后也能重新打开。</p>
+          <div class="library-notice" id="library-notice" role="status" aria-live="polite">正在读取视频列表…</div>
+          <div class="asset-list" id="asset-list"></div>
+
+          <section class="video-preview" id="video-preview" aria-labelledby="preview-title" hidden>
+            <div class="preview-heading"><h3 id="preview-title">视频预览</h3><button class="text-button" id="close-preview" type="button">关闭</button></div>
+            <video id="video-player" controls preload="metadata" playsinline></video>
+            <p class="preview-help">浏览器若不支持该视频的编码，可下载后用本地播放器打开。</p>
+          </section>
+        </section>
+      </div>
+    </main>
+
+    <footer>VideoSight <span>视频上传 · 本地单人使用</span></footer>
+  </div>
+</body>
+</html>
