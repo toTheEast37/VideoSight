@@ -1,15 +1,30 @@
-# Copy to config/application-dev.yaml, then explicitly activate the dev profile.
-# The local copy is ignored by Git and is outside the packaged JAR.
-# T01 starts without database credentials or a model API key.
+# 复制为 config/application-dev.yaml，再显式激活 dev 环境。
+# 本地副本被 Git 忽略，且不打入 JAR；不要将真实配置填进本模板。
 server:
   port: 8080
 
-# T04: replace placeholders and uncomment only after adding MySQL support.
-# spring:
-#   datasource:
-#     url: "<MYSQL_JDBC_URL>"
-#     username: "<MYSQL_USERNAME>"
-#     password: "<MYSQL_PASSWORD>"
+app:
+  upload:
+    # 填写并准备好三项外部服务后改成 true。
+    enabled: false
+  storage:
+    endpoint: "<MINIO_ENDPOINT>"
+    access-key: "<MINIO_ACCESS_KEY>"
+    secret-key: "<MINIO_SECRET_KEY>"
+    bucket: "<DEDICATED_VIDEO_BUCKET>"
 
-# T05: keep the Bailian API key here after the client property names are chosen.
-# API key placeholder: <BAILIAN_API_KEY>
+spring:
+  datasource:
+    # 先建立本项目独立的空数据库；Flyway 仅在该库中创建上传表。
+    url: "<MYSQL_JDBC_URL>"
+    username: "<MYSQL_USERNAME>"
+    password: "<MYSQL_PASSWORD>"
+  data:
+    redis:
+      host: "<REDIS_HOST>"
+      port: 6379
+      database: 0
+      password: "<REDIS_PASSWORD>"
+      timeout: 3s
+
+# 百炼与 Agent 未接入，本轮无需 API key。

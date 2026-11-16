@@ -1,6 +1,9 @@
 spring:
   application:
     name: vibeteaching
+  servlet:
+    multipart:
+      enabled: false
 
 server:
   address: 127.0.0.1
@@ -14,3 +17,17 @@ management:
   endpoint:
     health:
       show-details: never
+
+# 开发暂用参数，可调整；不代表已验证 2 GiB 文件。
+app:
+  upload:
+    enabled: false
+    chunk-size: 5242880
+    max-file-size: 2147483648
+    max-rounds: 3
+    concurrency: 3
+    request-timeout-ms: 60000
+    retry-delay-ms: 1000
+    session-ttl: 24h
+    temp-directory: work/upload-tmp
+    cleanup-delay-ms: 600000
