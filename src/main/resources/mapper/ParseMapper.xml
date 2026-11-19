@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.vibeteaching.parsing.persistence.ParseMapper">
+    <resultMap id="task" type="com.vibeteaching.parsing.ParseModels$Task">
+        <constructor>
+            <idArg column="task_id" javaType="string"/>
+            <arg column="asset_id" javaType="_long"/>
+            <arg column="profile_version" javaType="string"/>
+            <arg column="status" javaType="com.vibeteaching.parsing.ParseModels$TaskStatus"/>
+            <arg column="duration_ms" javaType="long"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="unit" type="com.vibeteaching.parsing.ParseModels$Unit">
+        <constructor>
+            <idArg column="task_id" javaType="string"/>
+            <idArg column="kind" javaType="com.vibeteaching.parsing.ParseModels$Kind"/>
+            <idArg column="unit_index" javaType="_int"/>
+            <arg column="generation" javaType="_int"/>
+            <arg column="status" javaType="com.vibeteaching.parsing.ParseModels$UnitStatus"/>
+            <arg column="attempts" javaType="_int"/>
+            <arg column="input_key" javaType="string"/>
+            <arg column="start_ms" javaType="_long"/>
+            <arg column="end_ms" javaType="_long"/>
+            <arg column="result_text" javaType="string"/>
+            <arg column="error_code" javaType="string"/>
+            <arg column="error_message" javaType="string"/>
+            <arg column="lease_token" javaType="string"/>
+            <arg column="lease_until" javaType="java.time.Instant"/>
+            <arg column="next_run_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="pendingDispatch" type="com.vibeteaching.parsing.persistence.ParseMapper$DispatchRow">
+        <constructor>
+            <idArg column="task_id" javaType="string"/>
+            <idArg column="kind" javaType="com.vibeteaching.parsing.ParseModels$Kind"/>
+            <idArg column="unit_index" javaType="_int"/>
+            <idArg column="generation" javaType="_int"/>
+            <arg column="dispatch_attempts" javaType="_int"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="taskColumns">task_id, asset_id, profile_version, status, duration_ms, created_at, updated_at</sql>
+    <sql id="unitColumns">
+        task_id, kind, unit_index, generation, status, attempts, input_key,
+        start_ms, end_ms, result_text, error_code, error_message, lease_token, lease_until, next_run_at
+    </sql>
+    <sql id="unitIdentity">task_id = #{work.taskId} AND kind = #{work.kind} AND unit_index = #{work.unitIndex}</sql>
+    <sql id="workIdentity"><include refid="unitIdentity"/> AND generation = #{work.generation}</sql>
+
+    <insert id="insertTask">
+        INSERT INTO parse_task (<include refid="taskColumns"/>)
+        VALUES (#{taskId}, #{assetId}, #{profile}, 'QUEUED', NULL, #{now}, #{now})
+    </insert>
+    <insert id="bindRequest">
+        INSERT INTO parse_request (request_key, task_id, created_at) VALUES (#{requestKey}, #{taskId}, #{now})
+    </insert>
+    <select id="findTask" resultMap="task">
+        SELECT <include refid="taskColumns"/> FROM parse_task WHERE task_id = #{taskId}
+    </select>
+    <select id="findByAsset" resultMap="task">
+        SELECT <include refid="taskColumns"/> FROM parse_task WHERE asset_id = #{assetId} AND profile_version = #{profile}
+    </select>
+    <select id="findLatestByAsset" resultMap="task">
+        SELECT <include refid="taskColumns"/> FROM parse_task WHERE asset_id = #{assetId}
+        ORDER BY created_at DESC, task_id DESC LIMIT 1
+    </select>
+    <select id="findRequest" resultMap="task">
+        SELECT <include refid="taskColumns"/> FROM parse_task
+        WHERE task_id = (SELECT task_id FROM parse_request WHERE request_key = #{requestKey})
+    </select>
+    <select id="lockTask" resultMap="task">
+        SELECT <include refid="taskColumns"/> FROM parse_task WHERE task_id = #{taskId} FOR UPDATE
+    </select>
+    <select id="units" resultMap="unit">
+        SELECT <include refid="unitColumns"/> FROM parse_unit WHERE task_id = #{taskId} ORDER BY kind, unit_index
+    </select>
+    <select id="findUnit" resultMap="unit">
+        SELECT <include refid="unitColumns"/> FROM parse_unit WHERE <include refid="workIdentity"/>
+    </select>
+    <select id="unitUpdatedAt" resultType="java.time.Instant">
+        SELECT updated_at FROM parse_unit WHERE <include refid="unitIdentity"/>
+    </select>
+
+    <select id="pendingDispatches" resultMap="pendingDispatch">
+        SELECT task_id, kind, unit_index, generation, dispatch_attempts FROM parse_unit
+        WHERE status = 'QUEUED' AND dispatched_at IS NULL AND next_dispatch_at &lt;= #{now}
+            AND next_run_at &lt;= #{now}
+        ORDER BY next_dispatch_at, task_id, kind, unit_index LIMIT #{limit}
+    </select>
+    <update id="dispatchSent">
+        UPDATE parse_unit SET dispatched_at = #{now}
+        WHERE <include refid="workIdentity"/> AND status = 'QUEUED' AND dispatched_at IS NULL
+    </update>
+    <update id="dispatchFailed">
+        UPDATE parse_unit SET dispatch_attempts = dispatch_attempts + 1, next_dispatch_at = #{nextAttempt}
+        WHERE <include refid="workIdentity"/> AND status = 'QUEUED' AND dispatched_at IS NULL
+    </update>
+    <update id="claim">
+        UPDATE parse_unit SET status = 'RUNNING', attempts = attempts + 1,
+            lease_token = #{token}, lease_until = #{until}, updated_at = #{now}
+        WHERE <include refid="workIdentity"/> AND status = 'QUEUED' AND next_run_at &lt;= #{now}
+    </update>
+    <update id="renew">
+        UPDATE parse_unit SET lease_until = #{until}
+        WHERE <include refid="workIdentity"/> AND status = 'RUNNING' AND lease_token = #{token,jdbcType=VARCHAR}
+    </update>
+    <update id="finishOwned">
+        UPDATE parse_unit SET status = #{status}, result_text = #{text,jdbcType=LONGVARCHAR},
+            error_code = #{code,jdbcType=VARCHAR}, error_message = #{message,jdbcType=VARCHAR},
+            lease_token = NULL, lease_until = NULL, updated_at = #{now}
+        WHERE <include refid="workIdentity"/> AND status = 'RUNNING' AND lease_token = #{token,jdbcType=VARCHAR}
+    </update>
+
+    <update id="updateDuration">
+        UPDATE parse_task SET duration_ms = #{durationMs} WHERE task_id = #{taskId}
+    </update>
+    <insert id="insertUnit">
+        INSERT INTO parse_unit (task_id, kind, unit_index, generation, status, attempts, input_key,
+            start_ms, end_ms, next_run_at, updated_at, next_dispatch_at)
+        VALUES (#{taskId}, #{input.kind}, #{input.unitIndex}, 0, #{status}, 0, #{input.inputKey,jdbcType=VARCHAR},
+            #{input.startMs}, #{input.endMs}, #{now}, #{now}, #{now})
+    </insert>
+    <update id="updateUnitError">
+        UPDATE parse_unit SET error_code = #{code,jdbcType=VARCHAR}, error_message = #{message,jdbcType=VARCHAR}
+        WHERE <include refid="unitIdentity"/>
+    </update>
+    <update id="requeue">
+        UPDATE parse_unit SET status = 'QUEUED', generation = generation + 1, attempts = #{attempts},
+            lease_token = NULL, lease_until = NULL, error_code = NULL, error_message = NULL, next_run_at = #{next},
+            updated_at = #{now}, dispatch_attempts = 0, dispatched_at = NULL, next_dispatch_at = #{next}
+        WHERE <include refid="workIdentity"/>
+    </update>
+    <update id="republishQueued">
+        UPDATE parse_unit SET updated_at = #{now}, dispatched_at = NULL, next_dispatch_at = #{now}
+        WHERE <include refid="workIdentity"/> AND status = 'QUEUED'
+    </update>
+    <select id="recoverableTaskIds" resultType="string">
+        SELECT DISTINCT task_id FROM parse_unit WHERE
+            (status = 'RUNNING' AND lease_until &lt;= #{now})
+            OR (status = 'QUEUED' AND next_run_at &lt;= #{now} AND updated_at &lt;= #{staleBefore})
+        LIMIT 100
+    </select>
+    <update id="updateTaskStatus">
+        UPDATE parse_task SET status = #{status}, updated_at = #{now} WHERE task_id = #{taskId}
+    </update>
+</mapper>

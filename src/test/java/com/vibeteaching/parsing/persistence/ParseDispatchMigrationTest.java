@@ -1,11 +1,11 @@
 package com.vibeteaching.parsing.persistence;
 
+import com.vibeteaching.persistence.RepositoryTestSupport;
 import com.vibeteaching.parsing.ParseModels.Kind;
 import com.vibeteaching.parsing.ParseModels.PendingDispatch;
 import com.vibeteaching.parsing.ParseModels.WorkMessage;
 import com.vibeteaching.upload.model.UploadSession;
 import com.vibeteaching.upload.model.UploadStatus;
-import com.vibeteaching.upload.persistence.UploadRepository;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -14,7 +14,6 @@ import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,8 +27,7 @@ class ParseDispatchMigrationTest {
                 + ";MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE", "sa", "");
         Flyway.configure().dataSource(source).locations("classpath:db/migration").target("2").load().migrate();
         var jdbc = new JdbcTemplate(source);
-        var transactions = new DataSourceTransactionManager(source);
-        var uploads = new UploadRepository(jdbc, transactions);
+        var uploads = RepositoryTestSupport.uploads(source);
         var session = uploads.createOrFind(new UploadSession(UUID.randomUUID().toString(), UUID.randomUUID().toString(),
                 "课程.mp4", 10, 10, 1, "a".repeat(64), "video/mp4", UploadStatus.INITIALIZING,
                 NOW.plusSeconds(3600), NOW, NOW));
@@ -65,7 +63,7 @@ class ParseDispatchMigrationTest {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'parse_outbox'",
                 Integer.class)).isZero();
 
-        var repository = new ParseRepository(jdbc, transactions);
+        var repository = RepositoryTestSupport.parses(source);
         assertThat(repository.pendingDispatches(NOW, 10)).isEmpty();
         assertThat(repository.pendingDispatches(NOW.plusSeconds(30), 10)).containsExactly(
                 new PendingDispatch(new WorkMessage(task, Kind.OCR, 0, 2), 3));

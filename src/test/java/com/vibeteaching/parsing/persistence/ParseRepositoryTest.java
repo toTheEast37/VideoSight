@@ -1,5 +1,6 @@
 package com.vibeteaching.parsing.persistence;
 
+import com.vibeteaching.persistence.RepositoryTestSupport;
 import com.vibeteaching.parsing.ParseException;
 import com.vibeteaching.parsing.ParseModels.Input;
 import com.vibeteaching.parsing.ParseModels.Kind;
@@ -26,7 +27,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -363,9 +363,9 @@ class ParseRepositoryTest {
     }
     private WorkMessage work(Unit unit) { return new WorkMessage(unit.taskId(), unit.kind(), unit.unitIndex(), unit.generation()); }
     private int count(String table) { return jdbc.queryForObject("SELECT COUNT(*) FROM " + table, Integer.class); }
-    private ParseRepository restarted() { return new ParseRepository(new JdbcTemplate(source), new DataSourceTransactionManager(source)); }
+    private ParseRepository restarted() { return RepositoryTestSupport.parses(source); }
     private long seedAsset() {
-        UploadRepository uploads = new UploadRepository(jdbc, new DataSourceTransactionManager(source));
+        UploadRepository uploads = RepositoryTestSupport.uploads(source);
         UploadSession session = uploads.createOrFind(new UploadSession(UUID.randomUUID().toString(), UUID.randomUUID().toString(),
                 "课程.mp4", 10, 10, 1, "a".repeat(64), "video/mp4", UploadStatus.INITIALIZING, NOW.plusSeconds(3600), NOW, NOW));
         uploads.updateSession(session.uploadId(), UploadStatus.FINALIZING, session.expiresAt());

@@ -35,6 +35,20 @@
 
 迁移原理、字段映射、MySQL DDL 边界与面试口述示例统一见 technical-notes.md 的“从独立 Outbox 合并到处理单元”。快照恢复未演练；不能声称 MySQL 整个 DDL 脚本可自动回滚。最终应用与本地队列保留运行；本轮未暂存、提交或推送。
 
+## MyBatis-Plus 持久层迁移（2026-11-19）
+
+- 解析重构已在本地 `codex/parse-cleanup` 提交为 `17f8795`。拉取时远程 `dev` 仍停在上传版本，独立迁移分支 `codex/mybatis-plus` 从解析 PR #3 的 `27262c1` 创建，待 #3 合并后对齐 `dev`。
+- 已将上传和解析的生产仓储切到 MyBatis-Plus。视频资产单表操作复用 `BaseMapper`，事务、行锁与状态更新的条件收录在 Mapper XML。生产仓储已移除 `JdbcTemplate` 注入，测试仍可用它构造旧数据或核对真实数据库状态。现有 V1–V3、MySQL 主键和 HTTP 路由沿用。实现和结果映射复盘见 [MyBatis-Plus 持久层](technical-notes.md#mybatis-plus-持久层)。
+
+| 检查 | 实际结果与证据 |
+| --- | --- |
+| 完整构建和前端检查 | `.\mvnw.cmd --offline --batch-mode clean verify` 成功，83 项通过、8 项默认跳过，零失败、零错误。8 项包括真实媒体 6 项、Redis 1 项和 MySQL 1 项。Node 上传与解析 21 项全部通过。构建日志为 `work/mybatis-plus-verify.log`。 |
+| 已有数据兼容 | H2 + 正式 Flyway V1–V3 验证 V2 历史数据经 V3 保留当前代派发状态、已保存文字和失败状态，Mapper 可重新读回。完整仓储与工作流检查还覆盖同一任务 ASR/OCR 各自派发、部分结果保留、过期执行者写入拒绝等。 |
+| 真实 MySQL 8.0 | 使用独立回环实例运行 `MySqlMapperIntegrationTest`，1 项通过，零跳过。覆盖上传完成失败回滚、自增主键和重复完成、并发提交复用同一任务、重复领取与旧代回执保护、PREPARE 与子单元写入一并回滚、ASR 租约过期转不确定、确认重试及原 OCR 保存。核对 UTC 毫秒值。重建数据库连接后重新读取资产和识别文字，Flyway 再次执行 0 项。日志为 `work/mybatis-plus-mysql-isolated.log`。 |
+| 应用入口与打包 | 独立库数据写入后，新启动 dev 应用，关闭解析，用两个实际 HTTP GET 找回同一资产、任务和识别文字，校验了生产 Mapper 扫描与装配。另启动无私密配置的成品 JAR，健康接口返回 UP。JAR 含三个 Mapper XML、MyBatis-Plus 3.5.18、MyBatis 3.5.19 和 MyBatis-Spring 3.0.6，无本机 dev 配置。 |
+
+原 dev MySQL 端口拒绝连接，本轮验证使用单独的 MySQL 数据目录和临时库，完成后停止测试进程并清理临时目录。未重新运行真实 Redis、MinIO、RocketMQ、媒体工具或付费 ASR。真实 MySQL 仓储测试默认为关闭，显式开启时可使用 `-Dmysql.mapper.integration=true`，以 `-Dmysql.mapper.config=<本机测试配置路径>` 为独立实例指定配置。
+
 ## 视频文字解析任务（2026-11-17）
 
 以下保留 11 月 17 日独立 Outbox 实现的历史验收记录；当前结构与本轮检查以上方 11 月 19 日记录为准。
