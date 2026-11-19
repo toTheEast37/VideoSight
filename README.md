@@ -1,13 +1,14 @@
-# VideoSight：视频上传学习工程
+# VideoSight：视频上传与文字解析学习工程
 
-通过逐步重建 DOVideo 的能力，学习需求边界、实现、验收和失败处理。当前先完成视频上传，字幕总结和 Agent 暂缓。
+通过逐步重建 DOVideo 的能力，学习需求边界、实现、验收和失败处理。当前提供视频上传、后台语音转写和画面文字识别，字幕总结、RAG 和 Agent 暂缓。
 
 ## 当前状态
 
 - 已实现分片上传、刷新后重选原文件续传、按轮补传、请求幂等和视频资产查询/读取。
-- MySQL 保存上传会话与资产记录，Redis 保存临时分片进度，MinIO 保存文件。尚未加入 MQ、登录、内容秒传或 Agent。
-- Java 自动化测试与前端接口模拟检查已通过；真实 MySQL、Redis、MinIO 和浏览器已完成小视频联调，覆盖刷新续传、按轮补传及应用重启后读取。未验证 2 GiB 文件性能。
-- 通用配置默认 `app.upload.enabled=false`；本机被忽略的 dev 配置已启用上传，连接本机三个服务。
+- 已实现独立解析任务：FFmpeg 提取音频与抽样画面，百炼 ASR 转写语音，Tesseract 识别中英文；结果逐项保存，页面可以找回任务、查看文字和重试失败部分。
+- MySQL 保存上传和解析事实，解析处理单元同时保存消息派发状态；Redis 保存临时上传进度，MinIO 保存视频和识别输入，RocketMQ 派发处理单元。数据库短事务领取任务，长耗时识别在事务外执行。
+- 真实本机服务与浏览器已完成上传和约 8 秒测试视频的完整解析、刷新及应用重启后读取。识别质量和大文件性能的证据范围见任务记录。
+- 通用配置默认关闭上传和解析；本机被忽略的 dev 配置已连接服务并启用两者。没有登录、内容秒传或 Agent。
 - 提交和推送须有用户明确指令；私密配置、运行数据、媒体和构建产物不入库。
 
 ## 分支协作
@@ -36,26 +37,53 @@ if (!(Test-Path 'config/application-dev.yaml')) {
 
 启用真实上传前：
 
-1. 准备本项目独立的 MySQL 数据库，避免复用其他项目的业务库。Flyway 在独立库创建上传表，不自动修改黑马点评表。
+1. 准备本项目独立的 MySQL 数据库，避免复用其他项目的业务库。Flyway 在独立库创建上传与解析表，不自动修改黑马点评表。
 2. 在 dev 配置填写 MySQL、Redis 和 MinIO 的连接信息。MinIO 使用本项目独立存储桶，应用首次初始化上传时会检查并按需创建该桶。
 3. 确认服务可用后，将 dev 文件中的 `app.upload.enabled` 改为 `true`。未完成配置时保持 `false`。
 
 本轮已按用户指定来源复制 MySQL/Redis 私密配置到本地 dev 文件，并创建独立数据库 `vibeteaching`。2026-11-16 接通本机 Redis 6379 与 MinIO 9000，在独立桶 `vibeteaching-videos` 完成真实上传；本机 dev 上传开关已开启。MinIO 管理页面使用 9001 端口，后端使用 9000 接口；凭据仍仅在忽略的 dev 文件中。
 
+## 准备本地解析依赖
+
+下列脚本在 Windows、JDK 17 环境下运行；下载与数据都放在被忽略的 `work/`，不修改全局 PATH。首次下载需要网络；本机已准备好工具，可离线重新校验媒体工具。以下命令已在本机实际执行：
+
+```powershell
+.\scripts\SetupMediaTools.ps1 -Offline
+.\scripts\SetupRocketMq.ps1
+.\scripts\StartRocketMq.ps1
+```
+
+首次准备媒体工具时去掉 `-Offline`；该分支含下载逻辑，本机本轮校验使用已有下载。脚本核对固定摘要，再便携提取 FFmpeg/FFprobe、Tesseract 和中英文语言数据，不运行安装器。
+
+本地 RocketMQ 仅监听 `127.0.0.1` 的 9876、10911 和 10909，脚本创建 `videosight-parse` 主题。启动器通过项目内 SPI 关闭本实验不需要的 HA 复制服务；这是单 Broker 本地开发配置，不适用于集群部署。停止当前项目的队列进程：
+
+```powershell
+.\scripts\StopRocketMq.ps1
+```
+
+在私密 dev 文件填写 `app.parse` 的配置后开启 `enabled`：
+
+- `nameserver`：本机使用 `127.0.0.1:9876`。
+- `ffmpeg-command`、`ffprobe-command`：指向 `work/tools/media/ffmpeg/ffmpeg-9.0.2-essentials_build/bin/` 下对应 EXE 的绝对路径。
+- `ocr-command`：指向 `work/tools/media/tesseract/tesseract.exe` 的绝对路径。
+- `asr-url`、`asr-api-key`：百炼非流式 ASR 接口与密钥；`asr-model` 使用 `qwen-audio-3.1-asr-flash`。每片 WAV 直接编码后提交，云端不需要访问本机 MinIO。
+
+原视频解析暂限 256 MiB、30 分钟；音频约 60 秒一片，画面每 5 秒抽样，最多 360 帧。固定抽样会漏掉短暂画面，OCR 可能误识代码符号；时间标记不是句级字幕对齐。无音轨会跳过 ASR。云端是否已处理无法确认时，任务停止自动重提，需要用户明确接受可能重复计费后重试。
+
 ## 构建与检查
 
 ```powershell
 .\mvnw.cmd --batch-mode verify
-node --test src/test/js/upload-core.test.mjs
+node --test src/test/js/parse-core.test.mjs src/test/js/upload-core.test.mjs
 ```
 
-默认 Java 检查为 37 项通过、1 项真实 Redis 测试跳过；前端检查为 13 项逻辑与接口模拟通过。默认检查不要求外部服务。另已执行下面的真实 Redis 集成测试，验证生产 Lua、重复片、冲突、TTL 续期及缺键拒绝；它仅操作随机测试会话的两键，并在结束时清理：
+默认 Java 检查不要求外部服务；解析阶段的实际总数与显式媒体工具集成检查见 [任务与证据](docs/tasks.md)。前端逻辑与接口模拟共 21 项通过，它们不能代替真实模型和完整浏览器验收。上传阶段另已执行下面的真实 Redis 集成测试，验证生产 Lua、重复片、冲突、TTL 续期及缺键拒绝；它仅操作随机测试会话的两键，并在结束时清理：
 
 ```powershell
 .\mvnw.cmd --offline --batch-mode '-Dupload.redis.integration=true' '-Dtest=RedisUploadProgressStoreIntegrationTest' test
 ```
 
-该命令从本地 dev 文件读取 Redis 配置，要求真实服务可用；本轮 1 项通过。浏览器另使用约 12.5 MiB、3 片的真实 WebM 完成上传、播放和重启读取验证，具体证据及限制见任务清单。
+该命令从本地 dev 文件读取 Redis 配置，要求真实服务可用；上传阶段 1 项通过。浏览器另使用约 12.5 MiB、3 片的真实 WebM 完成上传、播放和重启读取验证，具体证据及限制见任务清单。
 
 启动已构建的 JAR，显式激活 dev；本轮检查使用 18080 端口：
 
@@ -63,7 +91,7 @@ node --test src/test/js/upload-core.test.mjs
 java -jar .\target\vibeteaching-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev --server.port=18080
 ```
 
-打开 `http://127.0.0.1:18080/`。本机三个服务运行且 dev 已启用时可上传；未启用上传时，页面会提示配置服务。前台进程用 Ctrl+C 停止；Windows 重新打包前应先停止占用该 JAR 的进程。
+打开 [本机页面](http://127.0.0.1:18080/)。上传后，从资料库点击“解析 / 查看文字”。上传需要 MySQL、Redis、MinIO；新解析还需要本地工具、百炼配置和 RocketMQ。Broker 暂时不可用时，配置齐备的任务仍会持久排队，恢复后继续。解析开关关闭仍可读取已保存历史。前台进程用 Ctrl+C 停止；Windows 重新打包前应先停止占用该 JAR 的进程。
 
 ```powershell
 Invoke-WebRequest 'http://127.0.0.1:18080/actuator/health' -Headers @{ Accept = 'application/json' } -UseBasicParsing

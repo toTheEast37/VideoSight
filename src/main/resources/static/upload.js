@@ -1,5 +1,8 @@
 import { FINGERPRINT_ALGORITHM, UploadError, formatBytes, bytesForParts, fingerprintFile,
   missingParts, readResumeRecords, saveResumeRecord, runUploadRounds } from './upload-core.mjs';
+import { createParsingPanel } from './parsing.js';
+
+const parsing = createParsingPanel();
 
 const element = id => document.getElementById(id);
 const ui = Object.fromEntries(['video-file', 'file-picker', 'settings-summary', 'selected-file', 'file-name',
@@ -421,7 +424,12 @@ function renderAsset(asset) {
   const download = document.createElement('a');
   download.href = `/api/videos/${asset.assetId}/content?download=true`;
   download.textContent = '下载';
-  actions.append(play, download);
+  const parse = document.createElement('button');
+  parse.type = 'button';
+  parse.className = 'text-button';
+  parse.textContent = '解析 / 查看文字';
+  parse.addEventListener('click', () => parsing.open(asset));
+  actions.append(play, download, parse);
   info.append(title, metadata, actions);
   card.append(thumbnail, info);
   return card;
