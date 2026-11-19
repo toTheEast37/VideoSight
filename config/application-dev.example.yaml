@@ -4,6 +4,16 @@ server:
   port: 8080
 
 app:
+  parse:
+    # 准备好 RocketMQ、FFmpeg、Tesseract 中文语言数据与百炼 ASR 后开启。
+    enabled: false
+    nameserver: "<ROCKETMQ_NAMESERVER_HOST_PORT>"
+    ffmpeg-command: "<FFMPEG_EXECUTABLE>"
+    ffprobe-command: "<FFPROBE_EXECUTABLE>"
+    ocr-command: "<TESSERACT_EXECUTABLE>"
+    asr-url: "<DASHSCOPE_NON_STREAMING_ASR_ENDPOINT>"
+    asr-model: "qwen-audio-3.1-asr-flash"
+    asr-api-key: "<DASHSCOPE_API_KEY>"
   upload:
     # 填写并准备好三项外部服务后改成 true。
     enabled: false
@@ -15,7 +25,7 @@ app:
 
 spring:
   datasource:
-    # 先建立本项目独立的空数据库；Flyway 仅在该库中创建上传表。
+    # 先建立本项目独立的空数据库；Flyway 仅在该库中创建上传与解析表。
     url: "<MYSQL_JDBC_URL>"
     username: "<MYSQL_USERNAME>"
     password: "<MYSQL_PASSWORD>"
@@ -27,4 +37,4 @@ spring:
       password: "<REDIS_PASSWORD>"
       timeout: 3s
 
-# 百炼与 Agent 未接入，本轮无需 API key。
+# 本轮仅接入语音转写，未接入总结或 Agent。
