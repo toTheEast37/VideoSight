@@ -1,4 +1,4 @@
-name: 构建与上传检查
+name: 构建与视频功能检查
 
 on:
   push:
@@ -36,5 +36,5 @@ jobs:
       - name: 构建并运行 Java 检查
         run: bash ./mvnw --batch-mode verify
 
-      - name: 运行前端上传检查
-        run: node --test src/test/js/upload-core.test.mjs
+      - name: 运行前端上传与解析检查
+        run: node --test src/test/js/upload-core.test.mjs src/test/js/parse-core.test.mjs

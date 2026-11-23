@@ -20,6 +20,21 @@ management:
 
 # 开发暂用参数，可调整；不代表已验证 2 GiB 文件。
 app:
+  parse:
+    enabled: false
+    profile-version: v1
+    max-duration: 30m
+    max-input-bytes: 268435456
+    audio-segment-seconds: 60
+    frame-interval-seconds: 5
+    max-frames: 360
+    temp-directory: work/parse-tmp
+    process-timeout: 5m
+    asr-timeout: 3m
+    lease-duration: 5m
+    requeue-after: 10m
+    max-attempts: 3
+    retry-delay: 10s
   upload:
     enabled: false
     chunk-size: 5242880
