@@ -4,6 +4,10 @@ server:
   port: 8080
 
 app:
+  qa:
+    enabled: false
+    base-url: "<DASHSCOPE_OPENAI_COMPATIBLE_BASE_URL>"
+    api-key: "<DASHSCOPE_API_KEY>"
   parse:
     # 准备好 RocketMQ、FFmpeg、Tesseract 中文语言数据与百炼 ASR 后开启。
     enabled: false

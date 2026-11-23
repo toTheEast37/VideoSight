@@ -15,7 +15,8 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(name = "app.upload.enabled", havingValue = "true")
-@MapperScan(basePackages = {"com.vibeteaching.upload.persistence", "com.vibeteaching.parsing.persistence"},
+@MapperScan(basePackages = {"com.vibeteaching.upload.persistence", "com.vibeteaching.parsing.persistence",
+        "com.vibeteaching.qa.persistence"},
         annotationClass = Mapper.class, sqlSessionFactoryRef = "sqlSessionFactory")
 public class PersistenceMapperConfiguration {
     @Bean

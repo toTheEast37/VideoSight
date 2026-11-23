@@ -1,8 +1,10 @@
 import { FINGERPRINT_ALGORITHM, UploadError, formatBytes, bytesForParts, fingerprintFile,
   missingParts, readResumeRecords, saveResumeRecord, runUploadRounds } from './upload-core.mjs';
 import { createParsingPanel } from './parsing.js';
+import { createQaPanel } from './qa.js';
 
 const parsing = createParsingPanel();
+const qa = createQaPanel(openPreview);
 
 const element = id => document.getElementById(id);
 const ui = Object.fromEntries(['video-file', 'file-picker', 'settings-summary', 'selected-file', 'file-name',
@@ -26,6 +28,7 @@ let assetLoading = false;
 let refreshAfterCurrent = false;
 let assetGeneration = 0;
 let restartAllowed = false;
+let previewSeek;
 
 ui['video-file'].addEventListener('change', () => selectFile(ui['video-file'].files[0]));
 ui['upload-button'].addEventListener('click', startUpload);
@@ -413,14 +416,7 @@ function renderAsset(asset) {
   play.type = 'button';
   play.className = 'text-button';
   play.textContent = '播放';
-  play.addEventListener('click', () => {
-    ui['video-preview'].hidden = false;
-    ui['preview-title'].textContent = asset.originalName;
-    ui['video-player'].src = `/api/videos/${asset.assetId}/content`;
-    ui['video-player'].nextElementSibling.textContent = '浏览器若不支持该视频的编码，可下载后用本地播放器打开。';
-    ui['video-player'].load();
-    ui['video-preview'].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  });
+  play.addEventListener('click', () => openPreview(asset));
   const download = document.createElement('a');
   download.href = `/api/videos/${asset.assetId}/content?download=true`;
   download.textContent = '下载';
@@ -429,13 +425,42 @@ function renderAsset(asset) {
   parse.className = 'text-button';
   parse.textContent = '解析 / 查看文字';
   parse.addEventListener('click', () => parsing.open(asset));
-  actions.append(play, download, parse);
+  const ask = document.createElement('button');
+  ask.type = 'button';
+  ask.className = 'text-button';
+  ask.textContent = '提问';
+  ask.addEventListener('click', () => qa.open(asset));
+  actions.append(play, download, parse, ask);
   info.append(title, metadata, actions);
   card.append(thumbnail, info);
   return card;
 }
 
+function openPreview(asset, startMs) {
+  const player = ui['video-player'];
+  const path = `/api/videos/${asset.assetId}/content`;
+  const reload = startMs === undefined || player.getAttribute('src') !== path;
+  previewSeek?.abort();
+  ui['video-preview'].hidden = false;
+  ui['preview-title'].textContent = asset.originalName;
+  if (startMs !== undefined) {
+    const seek = () => { player.currentTime = startMs / 1000; };
+    if (!reload && player.readyState >= 1) seek();
+    else {
+      previewSeek = new AbortController();
+      player.addEventListener('loadedmetadata', seek, { once: true, signal: previewSeek.signal });
+    }
+  }
+  if (reload) {
+    player.src = path;
+    player.nextElementSibling.textContent = '浏览器若不支持该视频的编码，可下载后用本地播放器打开。';
+    player.load();
+  }
+  ui['video-preview'].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
 function closePreview() {
+  previewSeek?.abort();
   ui['video-player'].pause();
   ui['video-player'].removeAttribute('src');
   ui['video-player'].load();

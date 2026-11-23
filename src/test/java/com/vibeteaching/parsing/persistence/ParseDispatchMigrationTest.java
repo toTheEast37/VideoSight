@@ -54,7 +54,7 @@ class ParseDispatchMigrationTest {
         var originalUnits = jdbc.queryForList("SELECT " + originalColumns + " FROM parse_unit ORDER BY kind, unit_index");
         var originalTasks = jdbc.queryForList("SELECT * FROM parse_task");
         var originalRequests = jdbc.queryForList("SELECT * FROM parse_request");
-        var migration = Flyway.configure().dataSource(source).locations("classpath:db/migration").load();
+        var migration = Flyway.configure().dataSource(source).locations("classpath:db/migration").target("3").load();
         assertThat(migration.migrate().migrationsExecuted).isEqualTo(1);
         assertThat(jdbc.queryForList("SELECT " + originalColumns + " FROM parse_unit ORDER BY kind, unit_index"))
                 .isEqualTo(originalUnits);
