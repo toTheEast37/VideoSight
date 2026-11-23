@@ -5,12 +5,22 @@
 ## 当前选择与边界
 
 - Java 17、Spring Boot 3.5.16、Maven 3.9.16 与 Wrapper 3.3.4 保留 T01 基线。
-- Spring JDBC + Flyway + MySQL 保存上传会话、视频资产和解析任务检查点；Redis 保存临时上传分片进度；MinIO SDK 9.0.4 保存原视频和持久识别输入。
+- MyBatis-Plus 3.5.18 + Flyway + MySQL 保存上传会话、视频资产和解析任务检查点；Redis 保存临时上传分片进度；MinIO SDK 9.0.4 保存原视频和持久识别输入。
 - MinIO SDK 的 Maven 依赖需要显式 okhttp-jvm 5.5.1，并将 Kotlin 版本对齐 SDK 所需的 2.1.21。编译、HTTP 替身及本机真实 MinIO 读写均已通过；本机服务端为用户启动的 RELEASE.2025-07-23T15-54-02Z。
 - 同源静态页面，无前端框架或独立打包。浏览器以文件切片逐段读取，不将整段视频加载到一个 ArrayBuffer。
 - 页面及文档的项目显示名为 VideoSight；已有包名、构建产物、数据库、存储桶和浏览器存储键保留现有技术标识，继续复用已保存资产和续传定位。
 - 默认 `app.upload.enabled=false`、`app.parse.enabled=false`。上传启用后才创建数据源、Flyway、Redis 和对象存储组件；两个开关均启用后才派发解析消息并连接消费者。基础页面启动不要求提供密钥，连接信息仅在被忽略的 `config/application-dev.yaml`。
 - 单后端实例、本地单人使用；本轮增加 RocketMQ Java 客户端 5.3.4。上传仍以固定条带锁协调同会话关键操作；解析以数据库短事务领取阶段，不引入 Redisson、用户表或内容秒传，不承诺跨实例协调。
+
+## MyBatis-Plus 持久层
+
+上传与解析继续通过既有 Repository 入口。MyBatis-Plus 的 Spring Boot 3 starter 服务于 Java 17 和 Spring Boot 3.5.16，Mapper、Flyway 和 Spring 事务管理器共用上传开关控制的数据源。关闭解析仍可读取已保存的资产和任务。Spring JDBC 和 MySQL JDBC 驱动仍在底层工作，生产仓储通过 Mapper 执行 SQL。[MyBatis-Plus 安装说明](https://baomidou.com/getting-started/install/#spring-boot3) [MyBatis-Spring 事务](https://mybatis.org/spring/transactions.html)
+
+- 上传方面，`video_asset` 按主键和 `upload_id` 的单表操作使用 `BaseMapper`，保留 MySQL 自增主键，由框架回填到可写的行模型，再转换为不可变的 `VideoAsset`。`upload_session` 的行锁、状态推进、查询排序和清理标记使用显式 SQL，资产插入和完成标记仍在同一短事务中。
+- 解析方面，领取、派发回执、续租、恢复和回写使用 Mapper XML 的显式 SQL。`task_id + kind + unit_index` 仍唯一标识处理单元，代数匹配保护当前派发与执行，回写额外核对 `lease_token`。更新行数、`FOR UPDATE`、唯一键冲突重试、明确清空可空字段以及 ASR 不确定计费门槛均保留。
+- `Instant` 类型处理器以 UTC 读写原有 `DATETIME(3)` 字段。MyBatis 会话缓存限制在单条语句，让仓储在一次事务中的重复查询照常执行。既有 Flyway V1–V3 的脚本、表、主键和数据沿用。
+
+迁移里的一次回归可以用于面试。查询 `parse_unit` 待派发列表时，每行对应一个处理单元。最初直接把一行映射成 `PendingDispatch(WorkMessage, attempts)`，将任务 ID、类型、序号、代数放在嵌套映射里。MyBatis 处理嵌套结果时会按外层结果映射计算行标识并复用已有对象，这个外层只有 `dispatch_attempts` 可用于区分结果。同一任务的 ASR 与 OCR 行尝试次数都为 0 时，仓储测试实际只收到了 ASR，工作流中的 OCR 调用次数为 0，任务继续处于 RUNNING。最终映射以处理单元身份和代数为字段，一行映射为一个 `DispatchRow`，再由仓储构建消息。用同一任务同时派发 ASR/OCR 的回归检查确认两个单元均执行并保存结果。[MyBatis 嵌套结果映射实现](https://mybatis.org/mybatis-3/ja/jacoco/org.apache.ibatis.executor.resultset/DefaultResultSetHandler.java.html)
 
 ## 标识与数据位置
 

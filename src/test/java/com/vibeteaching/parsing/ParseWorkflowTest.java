@@ -1,5 +1,6 @@
 package com.vibeteaching.parsing;
 
+import com.vibeteaching.persistence.RepositoryTestSupport;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vibeteaching.parsing.ParseModels.Input;
 import com.vibeteaching.parsing.ParseModels.Kind;
@@ -13,6 +14,7 @@ import com.vibeteaching.parsing.media.MediaPreparation;
 import com.vibeteaching.parsing.media.OcrClient;
 import com.vibeteaching.parsing.media.RecognitionException;
 import com.vibeteaching.parsing.mq.ParseDispatchScheduler;
+import com.vibeteaching.parsing.persistence.ParseMapper;
 import com.vibeteaching.parsing.persistence.ParseRepository;
 import com.vibeteaching.upload.model.UploadSession;
 import com.vibeteaching.upload.model.UploadStatus;
@@ -77,7 +79,7 @@ class ParseWorkflowTest {
                 + ";MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE", "sa", "");
         Flyway.configure().dataSource(source).locations("classpath:db/migration").load().migrate();
         jdbc = new JdbcTemplate(source);
-        uploads = new UploadRepository(jdbc, new DataSourceTransactionManager(source));
+        uploads = RepositoryTestSupport.uploads(source);
         repository = repository();
         service = new ParseService(repository, uploads, properties, clock);
         preparation = new FixturePreparation(properties);
@@ -180,8 +182,7 @@ class ParseWorkflowTest {
         worker.consume(pending(Kind.OCR));
         ParseProperties changed = properties(Map.of("app.parse.enabled", "false", "app.parse.profile-version", "v2",
                 "app.parse.asr-url", "", "app.parse.asr-api-key", ""));
-        ParseService restarted = new ParseService(repository(), new UploadRepository(new JdbcTemplate(source),
-                new DataSourceTransactionManager(source)), changed, clock);
+        ParseService restarted = new ParseService(repository(), RepositoryTestSupport.uploads(source), changed, clock);
         assertThat(restarted.settings().ready()).isFalse();
         assertThat(restarted.byId(taskId).status()).isEqualTo(TaskStatus.SUCCEEDED);
         assertThat(restarted.byAsset(assetId).taskId()).isEqualTo(taskId);
@@ -193,7 +194,8 @@ class ParseWorkflowTest {
     @Test
     void relayMayRepeatASuccessfulSendAfterReceiptPersistenceFailsWithoutRepeatingRecognition() {
         AtomicInteger receiptFailures = new AtomicInteger();
-        ParseRepository unreliableReceipt = new ParseRepository(new JdbcTemplate(source), new DataSourceTransactionManager(source)) {
+        ParseRepository unreliableReceipt = new ParseRepository(RepositoryTestSupport.mapperSession(source).getMapper(ParseMapper.class),
+                new DataSourceTransactionManager(source)) {
             @Override public void dispatchSent(WorkMessage message, Instant now) {
                 if (receiptFailures.getAndIncrement() == 0) throw new TransientDataAccessResourceException("可控回执保存失败");
                 super.dispatchSent(message, now);
@@ -233,7 +235,7 @@ class ParseWorkflowTest {
         return worker;
     }
 
-    private ParseRepository repository() { return new ParseRepository(new JdbcTemplate(source), new DataSourceTransactionManager(source)); }
+    private ParseRepository repository() { return RepositoryTestSupport.parses(source); }
 
     private ParseProperties properties(Map<String, String> changes) {
         Map<String, String> values = new HashMap<>();

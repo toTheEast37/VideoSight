@@ -17,7 +17,6 @@ import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.PlatformTransactionManager;
 
@@ -43,9 +42,6 @@ public class UploadInfrastructureConfiguration {
         Flyway uploadFlyway(DataSource source) {
             return Flyway.configure().dataSource(source).locations("classpath:db/migration").load();
         }
-
-        @Bean
-        JdbcTemplate uploadJdbcTemplate(DataSource source) { return new JdbcTemplate(source); }
 
         @Bean
         PlatformTransactionManager uploadTransactionManager(DataSource source) {

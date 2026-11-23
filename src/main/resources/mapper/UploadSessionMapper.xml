@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.vibeteaching.upload.persistence.UploadSessionMapper">
+    <resultMap id="session" type="com.vibeteaching.upload.model.UploadSession">
+        <constructor>
+            <idArg column="upload_id" javaType="string"/>
+            <arg column="request_key" javaType="string"/>
+            <arg column="original_name" javaType="string"/>
+            <arg column="file_size" javaType="_long"/>
+            <arg column="chunk_size" javaType="_int"/>
+            <arg column="total_chunks" javaType="_int"/>
+            <arg column="file_fingerprint" javaType="string"/>
+            <arg column="content_type" javaType="string"/>
+            <arg column="status" javaType="com.vibeteaching.upload.model.UploadStatus"/>
+            <arg column="expires_at" javaType="java.time.Instant"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="columns">
+        upload_id, request_key, original_name, file_size, chunk_size, total_chunks,
+        file_fingerprint, content_type, status, expires_at, created_at, updated_at
+    </sql>
+
+    <insert id="insert" parameterType="com.vibeteaching.upload.model.UploadSession">
+        INSERT INTO upload_session (<include refid="columns"/>)
+        VALUES (#{uploadId}, #{requestKey}, #{originalName}, #{fileSize}, #{chunkSize}, #{totalChunks},
+                #{fileFingerprint}, #{contentType}, #{status}, #{expiresAt}, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <select id="find" resultMap="session">
+        SELECT <include refid="columns"/> FROM upload_session WHERE upload_id = #{uploadId}
+    </select>
+
+    <select id="findByRequestKey" resultMap="session">
+        SELECT <include refid="columns"/> FROM upload_session WHERE request_key = #{requestKey}
+    </select>
+
+    <select id="lock" resultMap="session">
+        SELECT <include refid="columns"/> FROM upload_session WHERE upload_id = #{uploadId} FOR UPDATE
+    </select>
+
+    <update id="updateStatus">
+        UPDATE upload_session SET status = #{status}, expires_at = #{expiresAt}, updated_at = #{now}
+        WHERE upload_id = #{uploadId}
+    </update>
+
+    <update id="markCleanupPending">
+        UPDATE upload_session SET cleanup_pending = TRUE WHERE upload_id = #{uploadId}
+    </update>
+
+    <update id="markCleaned">
+        UPDATE upload_session SET cleanup_pending = FALSE WHERE upload_id = #{uploadId} AND status = 'COMPLETED'
+    </update>
+
+    <select id="findExpired" resultMap="session">
+        SELECT <include refid="columns"/> FROM upload_session
+        WHERE status IN ('INITIALIZING', 'UPLOADING', 'FINALIZING') AND expires_at &lt;= #{now}
+        ORDER BY expires_at, upload_id LIMIT #{limit}
+    </select>
+
+    <select id="findCleanupPending" resultMap="session">
+        SELECT <include refid="columns"/> FROM upload_session
+        WHERE status = 'COMPLETED' AND cleanup_pending = TRUE
+        ORDER BY updated_at, upload_id LIMIT #{limit}
+    </select>
+</mapper>

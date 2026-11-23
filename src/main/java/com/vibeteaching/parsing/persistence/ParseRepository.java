@@ -9,24 +9,16 @@ import com.vibeteaching.parsing.ParseModels.TaskStatus;
 import com.vibeteaching.parsing.ParseModels.Unit;
 import com.vibeteaching.parsing.ParseModels.UnitStatus;
 import com.vibeteaching.parsing.ParseModels.WorkMessage;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Calendar;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.TimeZone;
 import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.DependsOn;
 import org.springframework.dao.DuplicateKeyException;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
-import org.springframework.jdbc.core.SqlTypeValue;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -37,25 +29,11 @@ import org.springframework.transaction.support.TransactionTemplate;
 @ConditionalOnProperty(name = "app.upload.enabled", havingValue = "true")
 @DependsOn("uploadFlyway")
 public class ParseRepository {
-    private static final String TASK_COLUMNS = "task_id, asset_id, profile_version, status, duration_ms, created_at, updated_at";
-    private static final String UNIT_COLUMNS = "task_id, kind, unit_index, generation, status, attempts, input_key, "
-            + "start_ms, end_ms, result_text, error_code, error_message, lease_token, lease_until, next_run_at";
-    private static final RowMapper<Task> TASK_MAPPER = (rs, row) -> new Task(rs.getString("task_id"),
-            rs.getLong("asset_id"), rs.getString("profile_version"), TaskStatus.valueOf(rs.getString("status")),
-            rs.getObject("duration_ms") == null ? null : rs.getLong("duration_ms"),
-            instant(rs, "created_at"), instant(rs, "updated_at"));
-    private static final RowMapper<Unit> UNIT_MAPPER = (rs, row) -> new Unit(rs.getString("task_id"),
-            Kind.valueOf(rs.getString("kind")), rs.getInt("unit_index"), rs.getInt("generation"),
-            UnitStatus.valueOf(rs.getString("status")), rs.getInt("attempts"), rs.getString("input_key"),
-            rs.getLong("start_ms"), rs.getLong("end_ms"), rs.getString("result_text"), rs.getString("error_code"),
-            rs.getString("error_message"), rs.getString("lease_token"), instant(rs, "lease_until"),
-            instant(rs, "next_run_at"));
-
-    private final JdbcTemplate jdbc;
+    private final ParseMapper mapper;
     private final TransactionTemplate transaction;
 
-    public ParseRepository(JdbcTemplate jdbc, PlatformTransactionManager transactionManager) {
-        this.jdbc = jdbc;
+    public ParseRepository(ParseMapper mapper, PlatformTransactionManager transactionManager) {
+        this.mapper = mapper;
         this.transaction = new TransactionTemplate(transactionManager);
     }
 
@@ -74,13 +52,11 @@ public class ParseRepository {
                     Task task = findByAsset(assetId, profile).orElse(null);
                     if (task == null) {
                         String id = UUID.randomUUID().toString();
-                        jdbc.update("INSERT INTO parse_task (" + TASK_COLUMNS + ") VALUES (?, ?, ?, 'QUEUED', NULL, ?, ?)",
-                                id, assetId, profile, timestamp(now), timestamp(now));
-                        insertUnit(id, new Input(Kind.PREPARE, 0, null, 0, 0), UnitStatus.QUEUED, now);
+                        mapper.insertTask(id, assetId, profile, now);
+                        mapper.insertUnit(id, new Input(Kind.PREPARE, 0, null, 0, 0), UnitStatus.QUEUED, now);
                         task = findTask(id).orElseThrow();
                     }
-                    jdbc.update("INSERT INTO parse_request (request_key, task_id, created_at) VALUES (?, ?, ?)",
-                            requestKey, task.taskId(), timestamp(now));
+                    mapper.bindRequest(requestKey, task.taskId(), now);
                     return task;
                 }));
             } catch (DuplicateKeyException conflict) {
@@ -91,46 +67,32 @@ public class ParseRepository {
     }
 
     public Optional<Task> findTask(String taskId) {
-        return jdbc.query("SELECT " + TASK_COLUMNS + " FROM parse_task WHERE task_id = ?", TASK_MAPPER, taskId)
-                .stream().findFirst();
+        return Optional.ofNullable(mapper.findTask(taskId));
     }
 
     public Optional<Task> findByAsset(long assetId, String profile) {
-        return jdbc.query("SELECT " + TASK_COLUMNS + " FROM parse_task WHERE asset_id = ? AND profile_version = ?",
-                TASK_MAPPER, assetId, profile).stream().findFirst();
+        return Optional.ofNullable(mapper.findByAsset(assetId, profile));
     }
 
     public Optional<Task> findLatestByAsset(long assetId) {
-        return jdbc.query("SELECT " + TASK_COLUMNS + " FROM parse_task WHERE asset_id = ? "
-                + "ORDER BY created_at DESC, task_id DESC LIMIT 1", TASK_MAPPER, assetId).stream().findFirst();
+        return Optional.ofNullable(mapper.findLatestByAsset(assetId));
     }
 
     public List<Unit> units(String taskId) {
-        return jdbc.query("SELECT " + UNIT_COLUMNS + " FROM parse_unit WHERE task_id = ? ORDER BY kind, unit_index",
-                UNIT_MAPPER, taskId);
+        return mapper.units(taskId);
     }
 
     public List<PendingDispatch> pendingDispatches(Instant now, int limit) {
         if (limit < 1) throw new IllegalArgumentException("查询条数必须大于零");
-        return jdbc.query("SELECT task_id, kind, unit_index, generation, dispatch_attempts FROM parse_unit "
-                        + "WHERE status = 'QUEUED' AND dispatched_at IS NULL AND next_dispatch_at <= ? "
-                        + "AND next_run_at <= ? ORDER BY next_dispatch_at, task_id, kind, unit_index LIMIT ?",
-                (rs, row) -> new PendingDispatch(new WorkMessage(rs.getString("task_id"),
-                        Kind.valueOf(rs.getString("kind")), rs.getInt("unit_index"), rs.getInt("generation")),
-                        rs.getInt("dispatch_attempts")), timestamp(now), timestamp(now), limit);
+        return mapper.pendingDispatches(now, limit).stream().map(ParseMapper.DispatchRow::toPendingDispatch).toList();
     }
 
     public void dispatchSent(WorkMessage message, Instant now) {
-        jdbc.update("UPDATE parse_unit SET dispatched_at = ? WHERE task_id = ? AND kind = ? AND unit_index = ? "
-                        + "AND generation = ? AND status = 'QUEUED' AND dispatched_at IS NULL",
-                timestamp(now), message.taskId(), message.kind().name(), message.unitIndex(), message.generation());
+        mapper.dispatchSent(message, now);
     }
 
     public void dispatchFailed(WorkMessage message, Instant nextAttempt) {
-        jdbc.update("UPDATE parse_unit SET dispatch_attempts = dispatch_attempts + 1, next_dispatch_at = ? "
-                        + "WHERE task_id = ? AND kind = ? AND unit_index = ? AND generation = ? "
-                        + "AND status = 'QUEUED' AND dispatched_at IS NULL", timestamp(nextAttempt),
-                message.taskId(), message.kind().name(), message.unitIndex(), message.generation());
+        mapper.dispatchFailed(message, nextAttempt);
     }
 
     public Optional<Unit> claim(WorkMessage message, String token, Instant now, Duration lease) {
@@ -138,11 +100,7 @@ public class ParseRepository {
         if (lease.isNegative() || lease.isZero()) throw new IllegalArgumentException("执行租期必须大于零");
         return Objects.requireNonNull(transaction.execute(status -> {
             if (lockTask(message.taskId()).isEmpty()) return Optional.empty();
-            int changed = jdbc.update("UPDATE parse_unit SET status = 'RUNNING', attempts = attempts + 1, "
-                            + "lease_token = ?, lease_until = ?, updated_at = ? WHERE task_id = ? AND kind = ? "
-                            + "AND unit_index = ? AND generation = ? AND status = 'QUEUED' AND next_run_at <= ?",
-                    token, timestamp(now.plus(lease)), timestamp(now), message.taskId(), message.kind().name(),
-                    message.unitIndex(), message.generation(), timestamp(now));
+            int changed = mapper.claim(message, token, now, now.plus(lease));
             if (changed == 0) return Optional.empty();
             refreshTask(message.taskId(), now);
             return findUnit(message);
@@ -153,9 +111,7 @@ public class ParseRepository {
         // 与 recover 使用同一个任务行锁，避免恢复线程读到旧租期后覆盖刚刚成功的心跳。
         return Boolean.TRUE.equals(transaction.execute(status -> {
             if (lockTask(message.taskId()).isEmpty()) return false;
-            return jdbc.update("UPDATE parse_unit SET lease_until = ? WHERE task_id = ? AND kind = ? AND unit_index = ? "
-                            + "AND generation = ? AND status = 'RUNNING' AND lease_token = ?",
-                    timestamp(until), message.taskId(), message.kind().name(), message.unitIndex(), message.generation(), token) == 1;
+            return mapper.renew(message, token, until) == 1;
         }));
     }
 
@@ -176,11 +132,13 @@ public class ParseRepository {
         return Boolean.TRUE.equals(transaction.execute(status -> {
             if (lockTask(message.taskId()).isEmpty() || !owned(message, token)) return false;
             finishOwned(message, token, UnitStatus.SUCCEEDED, null, null, null, now);
-            jdbc.update("UPDATE parse_task SET duration_ms = ? WHERE task_id = ?", durationMs, message.taskId());
+            mapper.updateDuration(message.taskId(), durationMs);
             for (Input input : inputs) {
-                insertUnit(message.taskId(), input, UnitStatus.QUEUED, now);
+                mapper.insertUnit(message.taskId(), input, UnitStatus.QUEUED, now);
             }
-            if (!hasAudio) insertUnit(message.taskId(), new Input(Kind.ASR, 0, null, 0, durationMs), UnitStatus.SKIPPED, now);
+            if (!hasAudio) {
+                mapper.insertUnit(message.taskId(), new Input(Kind.ASR, 0, null, 0, durationMs), UnitStatus.SKIPPED, now);
+            }
             refreshTask(message.taskId(), now);
             return true;
         }));
@@ -204,8 +162,7 @@ public class ParseRepository {
             Unit unit = findUnit(message).orElseThrow();
             if (!uncertain && retryable && unit.attempts() < maxAttempts) {
                 requeue(unit, next, now, false);
-                jdbc.update("UPDATE parse_unit SET error_code = ?, error_message = ? WHERE task_id = ? AND kind = ? AND unit_index = ?",
-                        truncate(code, 64), truncate(errorMessage, 1000), unit.taskId(), unit.kind().name(), unit.unitIndex());
+                mapper.updateUnitError(message, truncate(code, 64), truncate(errorMessage, 1000));
             } else {
                 finishOwned(message, token, uncertain ? UnitStatus.UNCERTAIN : UnitStatus.FAILED,
                         null, truncate(code, 64), truncate(errorMessage, 1000), now);
@@ -238,10 +195,7 @@ public class ParseRepository {
     public int recover(Instant now, Duration queuedTimeout) {
         if (queuedTimeout.isNegative() || queuedTimeout.isZero()) throw new IllegalArgumentException("排队恢复期限必须大于零");
         Instant staleBefore = now.minus(queuedTimeout);
-        List<String> taskIds = jdbc.query("SELECT DISTINCT task_id FROM parse_unit WHERE "
-                        + "(status = 'RUNNING' AND lease_until <= ?) OR "
-                        + "(status = 'QUEUED' AND next_run_at <= ? AND updated_at <= ?) LIMIT 100",
-                (rs, row) -> rs.getString(1), timestamp(now), timestamp(now), timestamp(staleBefore));
+        List<String> taskIds = mapper.recoverableTaskIds(now, staleBefore);
         int recovered = 0;
         for (String taskId : taskIds) {
             Integer count = transaction.execute(status -> {
@@ -258,8 +212,7 @@ public class ParseRepository {
                         }
                         changed++;
                     } else if (unit.status() == UnitStatus.QUEUED && !unit.nextRunAt().isAfter(now)) {
-                        Instant updatedAt = jdbc.queryForObject("SELECT updated_at FROM parse_unit WHERE task_id = ? AND kind = ? AND unit_index = ?",
-                                (rs, row) -> instant(rs, "updated_at"), unit.taskId(), unit.kind().name(), unit.unitIndex());
+                        Instant updatedAt = mapper.unitUpdatedAt(work(unit));
                         if (updatedAt != null && !updatedAt.isAfter(staleBefore)) {
                             republishQueued(unit, now);
                             changed++;
@@ -275,8 +228,7 @@ public class ParseRepository {
     }
 
     private Optional<Task> findRequest(String requestKey) {
-        return jdbc.query("SELECT " + TASK_COLUMNS + " FROM parse_task WHERE task_id = "
-                + "(SELECT task_id FROM parse_request WHERE request_key = ?)", TASK_MAPPER, requestKey).stream().findFirst();
+        return Optional.ofNullable(mapper.findRequest(requestKey));
     }
 
     private void verifyBinding(Task task, long assetId, String profile) {
@@ -286,13 +238,11 @@ public class ParseRepository {
     }
 
     private Optional<Task> lockTask(String taskId) {
-        return jdbc.query("SELECT " + TASK_COLUMNS + " FROM parse_task WHERE task_id = ? FOR UPDATE", TASK_MAPPER, taskId)
-                .stream().findFirst();
+        return Optional.ofNullable(mapper.lockTask(taskId));
     }
 
     private Optional<Unit> findUnit(WorkMessage message) {
-        return jdbc.query("SELECT " + UNIT_COLUMNS + " FROM parse_unit WHERE task_id = ? AND kind = ? AND unit_index = ? AND generation = ?",
-                UNIT_MAPPER, message.taskId(), message.kind().name(), message.unitIndex(), message.generation()).stream().findFirst();
+        return Optional.ofNullable(mapper.findUnit(message));
     }
 
     private boolean owned(WorkMessage message, String token) {
@@ -301,36 +251,18 @@ public class ParseRepository {
 
     private void finishOwned(WorkMessage message, String token, UnitStatus unitStatus, String text,
                              String code, String errorMessage, Instant now) {
-        int changed = jdbc.update("UPDATE parse_unit SET status = ?, result_text = ?, error_code = ?, error_message = ?, "
-                        + "lease_token = NULL, lease_until = NULL, updated_at = ? WHERE task_id = ? AND kind = ? "
-                        + "AND unit_index = ? AND generation = ? AND status = 'RUNNING' AND lease_token = ?",
-                unitStatus.name(), text, code, errorMessage, timestamp(now), message.taskId(), message.kind().name(),
-                message.unitIndex(), message.generation(), token);
+        int changed = mapper.finishOwned(message, token, unitStatus, text, code, errorMessage, now);
         if (changed != 1) throw new IllegalStateException("解析执行权已改变，不能保存旧结果");
     }
 
-    private void insertUnit(String taskId, Input input, UnitStatus status, Instant now) {
-        jdbc.update("INSERT INTO parse_unit (task_id, kind, unit_index, generation, status, attempts, input_key, "
-                        + "start_ms, end_ms, next_run_at, updated_at, next_dispatch_at) VALUES (?, ?, ?, 0, ?, 0, ?, ?, ?, ?, ?, ?)",
-                taskId, input.kind().name(), input.unitIndex(), status.name(), input.inputKey(), input.startMs(), input.endMs(),
-                timestamp(now), timestamp(now), timestamp(now));
-    }
-
     private void requeue(Unit unit, Instant next, Instant now, boolean resetAttempts) {
-        jdbc.update("UPDATE parse_unit SET status = 'QUEUED', generation = generation + 1, attempts = ?, "
-                        + "lease_token = NULL, lease_until = NULL, error_code = NULL, error_message = NULL, next_run_at = ?, "
-                        + "updated_at = ?, dispatch_attempts = 0, dispatched_at = NULL, next_dispatch_at = ? "
-                        + "WHERE task_id = ? AND kind = ? AND unit_index = ? AND generation = ?",
-                resetAttempts ? 0 : unit.attempts(), timestamp(next), timestamp(now), timestamp(next), unit.taskId(), unit.kind().name(),
-                unit.unitIndex(), unit.generation());
+        mapper.requeue(work(unit), resetAttempts ? 0 : unit.attempts(), next, now);
     }
 
     private void republishQueued(Unit unit, Instant now) {
         // 排队久不等于旧消息失效。保留代数，原消息和补发消息任意一个先到都能领取，
         // 避免长队列中的旧消息不断被废弃、替代消息不断排到队尾而饥饿。
-        jdbc.update("UPDATE parse_unit SET updated_at = ?, dispatched_at = NULL, next_dispatch_at = ? "
-                        + "WHERE task_id = ? AND kind = ? AND unit_index = ? AND generation = ? AND status = 'QUEUED'",
-                timestamp(now), timestamp(now), unit.taskId(), unit.kind().name(), unit.unitIndex(), unit.generation());
+        mapper.republishQueued(work(unit), now);
     }
 
     private void refreshTask(String taskId, Instant now) {
@@ -342,20 +274,12 @@ public class ParseRepository {
         boolean recognized = units.stream().anyMatch(unit -> unit.kind() != Kind.PREPARE && unit.status() == UnitStatus.SUCCEEDED);
         TaskStatus taskStatus = running || (queued && prepared) ? TaskStatus.RUNNING
                 : queued ? TaskStatus.QUEUED : failed ? (recognized ? TaskStatus.PARTIAL : TaskStatus.FAILED) : TaskStatus.SUCCEEDED;
-        jdbc.update("UPDATE parse_task SET status = ?, updated_at = ? WHERE task_id = ?", taskStatus.name(), timestamp(now), taskId);
+        mapper.updateTaskStatus(taskId, taskStatus, now);
     }
 
     private static WorkMessage work(Unit unit) { return new WorkMessage(unit.taskId(), unit.kind(), unit.unitIndex(), unit.generation()); }
     private static String truncate(String value, int length) { return value == null || value.length() <= length ? value : value.substring(0, length); }
     private static void requireText(String value, int max, String label) {
         if (value == null || value.isBlank() || value.length() > max) throw new IllegalArgumentException(label + "不能为空或超长");
-    }
-    private static SqlTypeValue timestamp(Instant value) {
-        return (statement, index, sqlType, typeName) -> statement.setTimestamp(index,
-                value == null ? null : Timestamp.from(value), Calendar.getInstance(TimeZone.getTimeZone("UTC")));
-    }
-    private static Instant instant(ResultSet rs, String column) throws SQLException {
-        Timestamp value = rs.getTimestamp(column, Calendar.getInstance(TimeZone.getTimeZone("UTC")));
-        return value == null ? null : value.toInstant();
     }
 }
