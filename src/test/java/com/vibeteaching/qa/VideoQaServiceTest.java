@@ -28,8 +28,26 @@ class VideoQaServiceTest {
     private static final String QUESTION = "画面哪里出现 lease_token？";
     private static final String OCR = "UPDATE ... WHERE lease_token = ?";
     private static final QaProperties CONFIG = new QaProperties(true, "https://example.test/compatible-mode/v1",
-            "test-only", "embedding-test", "answer-test", Duration.ofSeconds(1));
+            "test-only", "embedding-test", "answer-test", "rerank-test", Duration.ofSeconds(1));
     private final ObjectMapper json = new ObjectMapper();
+
+    @Test
+    void usesCleanOcrForEmbeddingAndRerankButKeepsRawEvidenceAndTime() {
+        String raw = "C++　GET\r\n\r\n\u200BSELECT   assetId FROM video_asset;\r\n爹 查 路 径";
+        String clean = "C++ GET\nSELECT assetId FROM video_asset;\n爹查路径";
+        var task = task(1, TaskStatus.SUCCEEDED, List.of(
+                new UnitView(Kind.OCR, 0, UnitStatus.SUCCEEDED, 1, 7500, 7500, raw, null, null),
+                new UnitView(Kind.OCR, 1, UnitStatus.SUCCEEDED, 1, 8500, 8500, clean, null, null)));
+        var model = new LocalModel();
+        var service = service(task, new VideoVectorMapper() {
+            @Override public List<VectorRow> find(long assetId, List<String> keys) { return List.of(); }
+            @Override public void save(long assetId, String key, String embeddingJson) { }
+        }, model);
+        var observed = service.retrieve(service.prepare(1), QUESTION, true);
+        assertThat(model.embedded).containsExactly(List.of(clean), List.of(QUESTION));
+        assertThat(model.reranked).containsExactly(clean);
+        assertThat(observed).containsExactly(new VideoQaService.Source("OCR-0", Kind.OCR, 7500, 7500, raw));
+    }
 
     @Test
     void savesOnlyThisAssetsVectorsAndReusesThemAfterReopeningMapper() throws Exception {
@@ -116,8 +134,14 @@ class VideoQaServiceTest {
 
     private final class LocalModel extends QaModelClient {
         final List<List<String>> embedded = new ArrayList<>();
+        final List<String> reranked = new ArrayList<>();
 
         LocalModel() { super(CONFIG, VideoQaServiceTest.this.json); }
+
+        @Override public List<Integer> rerank(String query, List<String> documents) {
+            reranked.addAll(documents);
+            return List.of(0);
+        }
 
         @Override public List<float[]> embed(List<String> inputs) {
             embedded.add(List.copyOf(inputs));

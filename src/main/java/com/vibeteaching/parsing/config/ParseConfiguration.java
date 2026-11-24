@@ -26,7 +26,12 @@ public class ParseConfiguration {
             return new DashScopeAsrClient(properties, mapper);
         }
 
-        @Bean OcrClient parseOcrClient(ParseProperties properties) { return new TesseractOcrClient(properties); }
+        @Bean OcrClient parseOcrClient(ParseProperties properties, ObjectMapper mapper) {
+            return switch (properties.ocrProvider()) {
+                case TESSERACT -> new TesseractOcrClient(properties);
+                case QWEN -> new DashScopeOcrClient(properties, mapper);
+            };
+        }
 
         @Bean ParseWorker parseWorker(ParseRepository repository, UploadRepository uploads, MediaPreparation preparation,
                                      AsrClient asr, OcrClient ocr, ParseProperties properties, ParseService service, Clock clock) {

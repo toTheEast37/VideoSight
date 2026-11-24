@@ -24,6 +24,7 @@ app:
     enabled: false
     embedding-model: qwen3.7-text-embedding-flash
     answer-model: qwen-flash
+    rerank-model: qwen3.7-text-rerank
     timeout: 20s
   parse:
     enabled: false
@@ -36,6 +37,11 @@ app:
     temp-directory: work/parse-tmp
     process-timeout: 5m
     asr-timeout: 3m
+    ocr-provider: tesseract
+    ocr-base-url: "${app.qa.base-url:}"
+    ocr-api-key: "${app.qa.api-key:}"
+    ocr-model: qwen3.5-ocr
+    ocr-timeout: 30s
     lease-duration: 5m
     requeue-after: 10m
     max-attempts: 3

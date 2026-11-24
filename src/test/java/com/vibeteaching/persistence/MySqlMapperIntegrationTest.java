@@ -194,7 +194,7 @@ class MySqlMapperIntegrationTest {
         WorkMessage asr = pending(parses, Kind.ASR, next);
         assertThat(parses.claim(asr, "asr", next, LEASE)).isPresent();
         Instant expired = next.plus(LEASE).plusSeconds(1);
-        assertThat(parses.recover(expired, Duration.ofMinutes(5))).isEqualTo(1);
+        assertThat(parses.recover(expired, Duration.ofMinutes(5), "local-ocr")).isEqualTo(1);
         assertThat(parses.units(taskId)).filteredOn(unit -> unit.kind() == Kind.ASR).singleElement()
                 .satisfies(unit -> assertThat(unit.status()).isEqualTo(UnitStatus.UNCERTAIN));
         assertThatThrownBy(() -> parses.retry(taskId, false, expired)).isInstanceOfSatisfying(ParseException.class,

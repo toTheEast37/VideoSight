@@ -1,4 +1,4 @@
-import { createParseRequest, createParseCoordinator, describeTask, retryOptions, shouldPoll, formatSourceTime } from './parse-core.mjs';
+import { createParseRequest, createParseCoordinator, describeTask, retryOptions, shouldPoll, canReparse, formatSourceTime } from './parse-core.mjs';
 
 const unitLabels = { QUEUED: '等待处理', RUNNING: '处理中', SUCCEEDED: '已保存', SKIPPED: '已跳过', FAILED: '未完成', UNCERTAIN: '受理状态待确认' };
 
@@ -21,7 +21,7 @@ export function createParsingPanel({ document: doc = globalThis.document, storag
     ui['parse-panel'].hidden = true;
   });
   ui['parse-refresh'].addEventListener('click', refresh);
-  ui['parse-start'].addEventListener('click', () => mutate(() => service.start(asset.assetId)));
+  ui['parse-start'].addEventListener('click', () => mutate(() => service.start(asset.assetId, settings?.profileVersion)));
   ui['parse-retry'].addEventListener('click', () => mutate(() => service.retry(task, false)));
   ui['parse-uncertain-retry'].addEventListener('click', () => mutate(() => service.retry(task, true)));
 
@@ -32,7 +32,9 @@ export function createParsingPanel({ document: doc = globalThis.document, storag
   function controls() {
     const ready = settings?.enabled && settings?.ready;
     const retry = retryOptions(task);
-    ui['parse-start'].hidden = Boolean(task);
+    const reparse = canReparse(task, settings?.profileVersion);
+    ui['parse-start'].hidden = Boolean(task) && !reparse;
+    ui['parse-start'].textContent = reparse ? '用当前配置重新解析' : '开始解析文字';
     ui['parse-start'].disabled = busy || !known || !ready;
     ui['parse-refresh'].disabled = busy;
     ui['parse-retry'].hidden = !retry.available || retry.confirmUncertain;
@@ -59,7 +61,9 @@ export function createParsingPanel({ document: doc = globalThis.document, storag
     const description = describeTask(task);
     ui['parse-status'].textContent = description.label;
     ui['parse-status'].dataset.tone = description.tone;
-    notice(description.message, description.tone);
+    notice(settings?.ready && canReparse(task, settings.profileVersion)
+      ? '下方是已有结果。重新解析会再次调用语音和画面识别服务，并保存新结果。'
+      : description.message, description.tone);
     const time = new Date(task.updatedAt);
     ui['parse-updated'].textContent = Number.isNaN(time.valueOf()) ? '' : `最近保存：${time.toLocaleString('zh-CN', { hour12: false })}`;
     renderUnits('PREPARE', ui['parse-prepare']);

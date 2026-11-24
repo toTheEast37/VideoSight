@@ -3,6 +3,7 @@ package com.vibeteaching.qa.web;
 import com.vibeteaching.parsing.ParseException;
 import com.vibeteaching.qa.QaException;
 import com.vibeteaching.qa.QaProperties;
+import com.vibeteaching.qa.VideoAgentLoop;
 import com.vibeteaching.qa.VideoQaService;
 import java.util.Map;
 import org.springframework.beans.factory.ObjectProvider;
@@ -22,9 +23,11 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 @EnableConfigurationProperties(QaProperties.class)
 public class VideoQaController {
     private final ObjectProvider<VideoQaService> service;
+    private final ObjectProvider<VideoAgentLoop> agent;
 
-    public VideoQaController(ObjectProvider<VideoQaService> service) {
+    public VideoQaController(ObjectProvider<VideoQaService> service, ObjectProvider<VideoAgentLoop> agent) {
         this.service = service;
+        this.agent = agent;
     }
 
     @PostMapping("/api/videos/{assetId}/ask")
@@ -34,6 +37,15 @@ public class VideoQaController {
             throw new QaException(HttpStatus.SERVICE_UNAVAILABLE, "QA_DISABLED", "视频问答尚未启用");
         }
         return qa.ask(assetId, request.question());
+    }
+
+    @PostMapping("/api/videos/{assetId}/ask/agent")
+    VideoAgentLoop.AgentAnswer askAgent(@PathVariable long assetId, @RequestBody Ask request) {
+        VideoAgentLoop loop = agent.getIfAvailable();
+        if (loop == null) {
+            throw new QaException(HttpStatus.SERVICE_UNAVAILABLE, "QA_DISABLED", "视频问答尚未启用");
+        }
+        return loop.ask(assetId, request.question());
     }
 
     @ExceptionHandler(QaException.class)

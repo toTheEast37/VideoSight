@@ -68,9 +68,6 @@ public class ParseService {
             throw new ParseException(HttpStatus.CONFLICT, "PARSE_PROFILE_CHANGED", "解析配置已变更，请从视频重新发起当前配置的解析");
         }
         if (current.status() == TaskStatus.QUEUED || current.status() == TaskStatus.RUNNING) return current;
-        if (!confirmUncertain && current.units().stream().anyMatch(unit -> unit.status() == UnitStatus.UNCERTAIN)) {
-            throw new ParseException(HttpStatus.CONFLICT, "ASR_RESUBMIT_CONFIRMATION", "语音识别可能已被受理，确认可能重复计费后才能重试");
-        }
         return view(repository.retry(taskId, confirmUncertain, clock.instant()));
     }
 
@@ -79,7 +76,7 @@ public class ParseService {
         return new Settings(properties.enabled(), properties.enabled() && problem == null,
                 !properties.enabled() ? "解析服务尚未启用，已保存的识别结果仍可查看" : problem == null
                         ? "可以开始解析。排队和识别期间可关闭页面，稍后回来查看。" : problem,
-                properties.maxDuration().toSeconds(), properties.frameIntervalSeconds(), properties.maxFrames());
+                properties.maxDuration().toSeconds(), properties.frameIntervalSeconds(), properties.maxFrames(), profile());
     }
 
     public String configurationProblem() {
@@ -102,15 +99,30 @@ public class ParseService {
         if (!executable(properties.ffmpegCommand()) || !executable(properties.ffprobeCommand())) {
             return "尚未找到视频处理工具，请配置 FFmpeg 和 FFprobe 的可执行文件路径";
         }
-        if (!executable(properties.ocrCommand())) return "尚未找到画面文字识别工具，请配置 Tesseract 路径和中文语言数据";
-        return null;
+        return switch (properties.ocrProvider()) {
+            case TESSERACT -> executable(properties.ocrCommand()) ? null
+                    : "尚未找到画面文字识别工具，请配置 Tesseract 路径和中文语言数据";
+            case QWEN -> properties.qwenOcrReady() ? null
+                    : "尚未完成百炼画面文字识别配置，请检查接口地址、密钥和 qwen3.5-ocr 模型";
+        };
     }
 
     public String profile() {
+        return switch (properties.ocrProvider()) {
+            case TESSERACT -> localOcrProfile();
+            case QWEN -> profileWithOcr(properties.ocrEndpoint() + "\n" + properties.ocrModel());
+        };
+    }
+
+    public String localOcrProfile() {
+        return profileWithOcr(properties.ocrCommand() + "\nchi_sim+eng");
+    }
+
+    private String profileWithOcr(String ocrIdentity) {
         // 只以影响输出的非敏感配置计算版本；密钥轮换不会导致重复付费解析。
         String source = properties.asrUrl() + "\n" + properties.asrModel() + "\n"
                 + properties.audioSegmentSeconds() + "\n" + properties.frameIntervalSeconds()
-                + "\n" + properties.ocrCommand() + "\nchi_sim+eng\nfixed-frame-v1";
+                + "\n" + ocrIdentity + "\nfixed-frame-v1";
         try {
             return properties.profileVersion() + "-" + HexFormat.of().formatHex(
                     MessageDigest.getInstance("SHA-256").digest(source.getBytes(StandardCharsets.UTF_8))).substring(0, 24);
@@ -161,7 +173,7 @@ public class ParseService {
     }
 
     public record Settings(boolean enabled, boolean ready, String message, long maxDurationSeconds,
-                           int frameIntervalSeconds, int maxFrames) { }
+                           int frameIntervalSeconds, int maxFrames, String profileVersion) { }
     public record UnitView(Kind kind, int unitIndex, UnitStatus status, int attempts, long startMs,
                            long endMs, String text, String errorCode, String message) { }
     public record TaskView(String taskId, long assetId, String profileVersion, TaskStatus status,

@@ -2,6 +2,7 @@ package com.vibeteaching.parsing.config;
 
 import java.nio.file.Path;
 import java.time.Duration;
+import okhttp3.HttpUrl;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
@@ -18,7 +19,12 @@ public record ParseProperties(
         @DefaultValue("work/parse-tmp") Path tempDirectory,
         @DefaultValue("ffmpeg") String ffmpegCommand,
         @DefaultValue("ffprobe") String ffprobeCommand,
+        @DefaultValue("tesseract") OcrProvider ocrProvider,
         @DefaultValue("tesseract") String ocrCommand,
+        @DefaultValue("") String ocrBaseUrl,
+        @DefaultValue("") String ocrApiKey,
+        @DefaultValue("qwen3.5-ocr") String ocrModel,
+        @DefaultValue("30s") Duration ocrTimeout,
         @DefaultValue("") String asrUrl,
         @DefaultValue("") String asrModel,
         @DefaultValue("") String asrApiKey,
@@ -38,13 +44,32 @@ public record ParseProperties(
                 || maxInputBytes < 1 || maxInputBytes > 2147483648L
                 || frameIntervalSeconds < 1 || maxFrames < 1 || maxFrames > 1000
                 || audioSegmentSeconds < 10 || audioSegmentSeconds > 300
-                || !positive(asrTimeout) || !positive(processTimeout) || !positive(leaseDuration)
+                || !positive(asrTimeout) || !positive(ocrTimeout) || !positive(processTimeout) || !positive(leaseDuration)
                 || leaseDuration.compareTo(Duration.ofSeconds(30)) < 0 || !positive(requeueAfter)
                 || !positive(retryDelay) || maxAttempts < 1 || maxAttempts > 5
-                || tempDirectory == null || !topic.matches("[a-zA-Z0-9_-]{1,64}")) {
+                || tempDirectory == null || ocrProvider == null || !topic.matches("[a-zA-Z0-9_-]{1,64}")) {
             throw new IllegalArgumentException("视频解析参数无效，请检查时长、数量和超时边界");
         }
     }
+
+    public HttpUrl ocrEndpoint() {
+        HttpUrl base = ocrBaseUrl == null ? null : HttpUrl.parse(ocrBaseUrl);
+        if (base == null || !base.username().isEmpty() || !base.password().isEmpty()
+                || base.query() != null || base.fragment() != null
+                || !base.isHttps() && !("127.0.0.1".equals(base.host()) || "localhost".equals(base.host()))) {
+            return null;
+        }
+        String path = base.encodedPath();
+        if (!path.equals("/compatible-mode/v1") && !path.equals("/compatible-mode/v1/")) return null;
+        return base.newBuilder().encodedPath("/compatible-mode/v1/chat/completions").build();
+    }
+
+    public boolean qwenOcrReady() {
+        return ocrEndpoint() != null && ocrApiKey != null && !ocrApiKey.isBlank() && !ocrApiKey.startsWith("<")
+                && "qwen3.5-ocr".equals(ocrModel);
+    }
+
+    public enum OcrProvider { TESSERACT, QWEN }
 
     private static boolean positive(Duration value) {
         return value != null && !value.isZero() && !value.isNegative();

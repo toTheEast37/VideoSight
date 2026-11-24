@@ -134,25 +134,46 @@ class ParseRepositoryTest {
     }
 
     @Test
-    void leaseRecoveryRejectsOldDeliveryAndOldWorkerWrites() {
+    void cloudOcrLeaseRecoveryRejectsOldDeliveryAndOldWorkerWrites() {
         Task task = prepared();
         WorkMessage ocr = message(task, Kind.OCR);
         assertThat(repository.claim(ocr, "old-worker", NOW, LEASE)).isPresent();
         assertThat(repository.claim(ocr, "duplicate-worker", NOW, LEASE)).isEmpty();
 
         Instant resumedAt = NOW.plusSeconds(31);
-        assertThat(repository.recover(resumedAt, Duration.ofHours(1))).isEqualTo(1);
+        assertThat(repository.recover(resumedAt, Duration.ofHours(1), "different-local-profile")).isEqualTo(1);
         Unit recovered = unit(task, Kind.OCR);
-        assertThat(recovered.generation()).isEqualTo(1);
+        assertThat(recovered.status()).isEqualTo(UnitStatus.UNCERTAIN);
+        assertThat(recovered.errorCode()).isEqualTo("OCR_RESULT_UNCERTAIN");
         assertThat(repository.complete(ocr, "old-worker", "迟到结果", resumedAt)).isFalse();
         assertThat(repository.renew(ocr, "old-worker", resumedAt.plusSeconds(30))).isFalse();
         assertThat(repository.claim(ocr, "another-old-worker", resumedAt, LEASE)).isEmpty();
-        WorkMessage current = work(recovered);
+        assertThatThrownBy(() -> repository.retry(task.taskId(), false, resumedAt))
+                .isInstanceOfSatisfying(ParseException.class,
+                        error -> assertThat(error.code()).isEqualTo("OCR_RESUBMIT_CONFIRMATION"));
+        repository.retry(task.taskId(), true, resumedAt);
+        WorkMessage current = work(unit(task, Kind.OCR));
+        assertThat(current.generation()).isEqualTo(1);
         assertThat(repository.claim(current, "new-worker", resumedAt, LEASE)).isPresent();
         assertThat(repository.complete(current, "wrong-token", "错误结果", resumedAt)).isFalse();
         assertThat(repository.complete(current, "new-worker", "已保存画面文字", resumedAt)).isTrue();
         assertThat(restarted().units(task.taskId())).filteredOn(unit -> unit.kind() == Kind.OCR)
                 .extracting(Unit::text).containsExactly("已保存画面文字");
+    }
+
+    @Test
+    void localOcrLeaseRecoveryRequeuesWithoutBillingConfirmation() {
+        Task task = prepared();
+        WorkMessage ocr = message(task, Kind.OCR);
+        assertThat(repository.claim(ocr, "old-worker", NOW, LEASE)).isPresent();
+
+        Instant resumedAt = NOW.plusSeconds(31);
+        assertThat(repository.recover(resumedAt, Duration.ofHours(1), task.profileVersion())).isEqualTo(1);
+        Unit recovered = unit(task, Kind.OCR);
+        assertThat(recovered.status()).isEqualTo(UnitStatus.QUEUED);
+        assertThat(recovered.generation()).isEqualTo(1);
+        assertThat(repository.complete(ocr, "old-worker", "迟到结果", resumedAt)).isFalse();
+        assertThat(repository.claim(work(recovered), "new-worker", resumedAt, LEASE)).isPresent();
     }
 
     @Test
@@ -165,10 +186,10 @@ class ParseRepositoryTest {
         repository.complete(ocr, "ocr-worker", "课件内容", NOW);
 
         Instant later = NOW.plusSeconds(31);
-        assertThat(repository.recover(later, Duration.ofHours(1))).isEqualTo(1);
+        assertThat(repository.recover(later, Duration.ofHours(1), task.profileVersion())).isEqualTo(1);
         assertThat(unit(task, Kind.ASR).status()).isEqualTo(UnitStatus.UNCERTAIN);
         assertThat(restarted().findTask(task.taskId()).orElseThrow().status()).isEqualTo(TaskStatus.PARTIAL);
-        assertThat(repository.recover(later.plusSeconds(31), Duration.ofHours(1))).isZero();
+        assertThat(repository.recover(later.plusSeconds(31), Duration.ofHours(1), task.profileVersion())).isZero();
         assertThat(repository.complete(asr, "uncertain-asr", "迟到语音", later)).isFalse();
 
         Task retried = restarted().retry(task.taskId(), true, later);
@@ -243,14 +264,14 @@ class ParseRepositoryTest {
         PendingDispatch original = repository.pendingDispatches(NOW, 1).get(0);
         repository.dispatchSent(original.message(), NOW);
         assertThat(restarted().pendingDispatches(NOW, 10)).isEmpty();
-        assertThat(repository.recover(NOW.plusSeconds(59), Duration.ofMinutes(1))).isZero();
+        assertThat(repository.recover(NOW.plusSeconds(59), Duration.ofMinutes(1), task.profileVersion())).isZero();
         Instant later = NOW.plusSeconds(61);
-        assertThat(repository.recover(later, Duration.ofMinutes(1))).isEqualTo(1);
+        assertThat(repository.recover(later, Duration.ofMinutes(1), task.profileVersion())).isEqualTo(1);
         PendingDispatch replacement = restarted().pendingDispatches(later, 10).get(0);
         assertThat(replacement.message()).isEqualTo(original.message());
         // 再经历一轮长排队，最初位于队首的消息仍然有效，不会反复被替代消息挤到队尾。
         Instant muchLater = later.plusSeconds(61);
-        assertThat(repository.recover(muchLater, Duration.ofMinutes(1))).isEqualTo(1);
+        assertThat(repository.recover(muchLater, Duration.ofMinutes(1), task.profileVersion())).isEqualTo(1);
         assertThat(count("parse_unit")).isEqualTo(1);
         assertThat(repository.claim(original.message(), "original-arrives-first", muchLater, LEASE)).isPresent();
         assertThat(repository.claim(replacement.message(), "duplicate-arrives-later", muchLater, LEASE)).isEmpty();

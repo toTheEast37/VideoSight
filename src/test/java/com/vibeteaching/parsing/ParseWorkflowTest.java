@@ -160,7 +160,7 @@ class ParseWorkflowTest {
         assertThat(asrCalls.get()).isEqualTo(1);
 
         clock.advance(properties.leaseDuration().plusSeconds(1));
-        repository.recover(clock.instant(), properties.requeueAfter());
+        repository.recover(clock.instant(), properties.requeueAfter(), service.localOcrProfile());
         worker.consume(pending(Kind.OCR));
         ParseService.TaskView recovered = new ParseService(repository(), uploads, properties, clock).byId(taskId);
         assertThat(recovered.status()).isEqualTo(TaskStatus.PARTIAL);
@@ -206,7 +206,7 @@ class ParseWorkflowTest {
         ParseWorker worker = worker(unreliableReceipt, path -> { asrCalls.incrementAndGet(); return "语音"; },
                 path -> { ocrCalls.incrementAndGet(); return "画面"; });
         ArrayDeque<WorkMessage> broker = new ArrayDeque<>();
-        ParseDispatchScheduler relay = new ParseDispatchScheduler(unreliableReceipt, broker::addLast, properties, clock);
+        ParseDispatchScheduler relay = new ParseDispatchScheduler(unreliableReceipt, broker::addLast, properties, clock, service);
         String taskId = service.submit(assetId, UUID.randomUUID().toString()).taskId();
         relay.dispatch();
         assertThat(broker).hasSize(1);
