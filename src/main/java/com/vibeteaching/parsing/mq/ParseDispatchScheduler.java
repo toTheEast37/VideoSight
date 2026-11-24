@@ -1,5 +1,6 @@
 package com.vibeteaching.parsing.mq;
 
+import com.vibeteaching.parsing.ParseService;
 import com.vibeteaching.parsing.config.ParseProperties;
 import com.vibeteaching.parsing.persistence.ParseRepository;
 import java.time.Clock;
@@ -17,12 +18,15 @@ public class ParseDispatchScheduler {
     private final ParseMessagePublisher publisher;
     private final ParseProperties properties;
     private final Clock clock;
+    private final String localOcrProfile;
 
-    public ParseDispatchScheduler(ParseRepository repository, ParseMessagePublisher publisher, ParseProperties properties, Clock clock) {
+    public ParseDispatchScheduler(ParseRepository repository, ParseMessagePublisher publisher, ParseProperties properties,
+                                  Clock clock, ParseService service) {
         this.repository = repository;
         this.publisher = publisher;
         this.properties = properties;
         this.clock = clock;
+        this.localOcrProfile = service.localOcrProfile();
     }
 
     @Scheduled(fixedDelayString = "${app.parse.dispatch-delay-ms:2000}")
@@ -44,7 +48,7 @@ public class ParseDispatchScheduler {
 
     @Scheduled(fixedDelayString = "${app.parse.recovery-delay-ms:15000}")
     public void recover() {
-        try { repository.recover(clock.instant(), properties.requeueAfter()); }
+        try { repository.recover(clock.instant(), properties.requeueAfter(), localOcrProfile); }
         catch (RuntimeException failure) { log.warn("解析任务恢复检查暂不可用，将在后续轮次重试"); }
     }
 }

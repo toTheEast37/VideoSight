@@ -76,6 +76,25 @@ test('响应丢失且核对失败：保留原请求键，下一次先查询，�
   assert.equal(keys[0], keys[1]);
 });
 
+test('新识别配置可从已完成的旧结果发起解析，连续点击和丢失响应仍只创建一次', async () => {
+  const storage = storageValue();
+  storage.setItem(`${PARSE_REQUEST_PREFIX}${asset.assetId}`, taskId);
+  let current = taskValue('SUCCEEDED', [unit('OCR', 'SUCCEEDED', '旧画面文字')]);
+  let posts = 0;
+  const service = createParseCoordinator({ storage, request: async (path, options = {}) => {
+    if (options.method !== 'POST') return current;
+    posts += 1;
+    assert.notEqual(options.json.requestKey, taskId);
+    assert.equal(storage.getItem(`${PARSE_REQUEST_PREFIX}${asset.assetId}.v2`), options.json.requestKey);
+    current = { ...taskValue(), taskId: 'new-task', profileVersion: 'v2' };
+    throw new ParseError('模拟新解析的响应丢失');
+  } });
+  const result = await Promise.all([service.start(asset.assetId, 'v2'), service.start(asset.assetId, 'v2')]);
+  assert.deepEqual(result.map(task => task.taskId), ['new-task', 'new-task']);
+  assert.equal((await service.start(asset.assetId, 'v2')).taskId, 'new-task');
+  assert.equal(posts, 1);
+});
+
 test('状态查询失败、资产不存在和浏览器存储失败均不能变成新解析', async () => {
   let posts = 0;
   for (const error of [new ParseError('查询失败', { status: 503 }), new ParseError('资产不存在', { status: 404, code: 'ASSET_NOT_FOUND' })]) {

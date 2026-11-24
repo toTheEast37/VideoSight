@@ -5,7 +5,7 @@
 ## 当前状态
 
 - 已实现分片上传、刷新后重选原文件续传、按轮补传、请求幂等和视频资产查询/读取。
-- 已实现独立解析任务：FFmpeg 提取音频与抽样画面，百炼 ASR 转写语音，Tesseract 识别中英文；结果逐项保存，页面可以找回任务、查看文字和重试失败部分。
+- 已实现独立解析任务：FFmpeg 提取音频与抽样画面，百炼 ASR 转写语音，画面默认由 Tesseract 识别，也可配置百炼 `qwen3.5-ocr`；结果逐项保存。
 - 资料库中选择「提问」，可以针对已解析的单个视频提问。系统按子问题审查原文，证据不足时只补查一次。回答附语音或画面原文引文，点击时间定位视频。问答向量存现有 MySQL，在 Java 中完成加权排序。
 - MySQL 保存上传和解析事实，解析处理单元同时保存消息派发状态；Redis 保存临时上传进度，MinIO 保存视频和识别输入，RocketMQ 派发处理单元。数据库短事务领取任务，长耗时识别在事务外执行。
 - 真实本机服务与浏览器已完成上传和约 8 秒测试视频的完整解析、刷新及应用重启后读取。识别质量和大文件性能的证据范围见任务记录。
@@ -54,7 +54,7 @@ if (!(Test-Path 'config/application-dev.yaml')) {
 .\scripts\StartRocketMq.ps1
 ```
 
-首次准备媒体工具时去掉 `-Offline`；该分支含下载逻辑，本机本轮校验使用已有下载。脚本核对固定摘要，再便携提取 FFmpeg/FFprobe、Tesseract 和中英文语言数据，不运行安装器。
+首次准备媒体工具时去掉 `-Offline`。脚本会核对固定摘要并便携提取 FFmpeg/FFprobe、Tesseract 和中英文语言数据。
 
 本地 RocketMQ 仅监听 `127.0.0.1` 的 9876、10911 和 10909，脚本创建 `videosight-parse` 主题。启动器通过项目内 SPI 关闭本实验不需要的 HA 复制服务；这是单 Broker 本地开发配置，不适用于集群部署。停止当前项目的队列进程：
 
@@ -66,10 +66,12 @@ if (!(Test-Path 'config/application-dev.yaml')) {
 
 - `nameserver`：本机使用 `127.0.0.1:9876`。
 - `ffmpeg-command`、`ffprobe-command`：指向 `work/tools/media/ffmpeg/ffmpeg-9.0.2-essentials_build/bin/` 下对应 EXE 的绝对路径。
-- `ocr-command`：指向 `work/tools/media/tesseract/tesseract.exe` 的绝对路径。
+- `ocr-provider`：默认 `tesseract`，使用 `ocr-command` 指定的本机工具。设为 `qwen` 时使用百炼 `qwen3.5-ocr`，默认复用 `app.qa` 的地址和密钥，也可单独设置 `ocr-base-url`、`ocr-api-key`。
 - `asr-url`、`asr-api-key`：百炼非流式 ASR 接口与密钥；`asr-model` 使用 `qwen-audio-3.1-asr-flash`。每片 WAV 直接编码后提交，云端不需要访问本机 MinIO。
 
 原视频解析暂限 256 MiB、30 分钟；音频约 60 秒一片，画面每 5 秒抽样，最多 360 帧。固定抽样会漏掉短暂画面，OCR 可能误识代码符号；时间标记不是句级字幕对齐。无音轨会跳过 ASR。云端是否已处理无法确认时，任务停止自动重提，需要用户明确接受可能重复计费后重试。
+
+切换模型后，旧解析结果仍可在页面查看。选择「用当前配置重新解析」会从原视频生成新任务，重新调用 ASR 和 OCR。问答从已保存的画面转录生成用于向量化的检索文本，证据引用沿用原始转录和抽帧时间。
 
 ## 构建与检查
 

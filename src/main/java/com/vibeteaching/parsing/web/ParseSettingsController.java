@@ -19,6 +19,6 @@ public class ParseSettingsController {
         ParseService service = parsing.getIfAvailable();
         if (service != null) return service.settings();
         return new ParseService.Settings(false, false, "上传服务尚未启用，暂不能解析视频",
-                properties.maxDuration().toSeconds(), properties.frameIntervalSeconds(), properties.maxFrames());
+                properties.maxDuration().toSeconds(), properties.frameIntervalSeconds(), properties.maxFrames(), null);
     }
 }

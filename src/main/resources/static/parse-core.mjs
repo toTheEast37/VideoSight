@@ -22,6 +22,8 @@ export function validateTask(task, assetId) {
 }
 
 export const shouldPoll = task => task?.status === 'QUEUED' || task?.status === 'RUNNING';
+export const canReparse = (task, profile) => Boolean(task?.profileVersion && profile
+  && task.profileVersion !== profile && !shouldPoll(task));
 
 export function retryOptions(task) {
   const available = Boolean(task?.canRetry && !shouldPoll(task));
@@ -91,9 +93,9 @@ export function createParseCoordinator({ request, storage, uuid = () => crypto.r
     inFlight.set(assetId, operation);
     return operation;
   }
-  function requestKey(assetId) {
+  function requestKey(assetId, profile) {
     try {
-      const key = `${PARSE_REQUEST_PREFIX}${assetId}`;
+      const key = `${PARSE_REQUEST_PREFIX}${assetId}${profile ? `.${profile}` : ''}`;
       const existing = storage.getItem(key);
       if (existing != null && !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(existing)) {
         throw new Error('无效的请求键');
@@ -105,18 +107,18 @@ export function createParseCoordinator({ request, storage, uuid = () => crypto.r
       throw new ParseError('未能保存本次解析的请求标识，已暂停提交。请检查浏览器存储；已有结果仍可查看。', { code: 'LOCAL_STORAGE_FAILED' });
     }
   }
-  const start = assetId => exclusive(assetId, async () => {
+  const start = (assetId, profile) => exclusive(assetId, async () => {
     let existing;
     try { existing = await inspect(assetId); } // 每次提交前核对，包括上一次响应丢失后的重试。
     catch (error) { throw new ParseError(error.message, { code: error.code, unconfirmed: true }); }
-    if (existing) return existing;
-    const key = requestKey(assetId);
+    if (existing && !canReparse(existing, profile)) return existing;
+    const key = requestKey(assetId, profile);
     try { return validateTask(await request(assetPath(assetId), { method: 'POST', json: { requestKey: key } }), assetId); }
     catch (error) {
       // 提交失败不代表服务端没有受理；先找回数据库记录，不用新键重建任务。
       try {
         const recovered = await inspect(assetId);
-        if (recovered) return recovered;
+        if (recovered && (!profile || recovered.profileVersion === profile)) return recovered;
       } catch {
         throw new ParseError('提交结果暂时无法确认，核对状态也未成功。请先刷新状态，勿重复发起解析。',
           { code: 'SUBMISSION_UNCONFIRMED', unconfirmed: true });

@@ -156,7 +156,9 @@ class MediaPreparationIntegrationTest {
 
     private ParseProperties properties(int maxFrames, Duration maxDuration) {
         return new ParseProperties(true, "media-integration", maxDuration, 268435456, 5, maxFrames, 60,
-                temp.resolve("owned-work"), ffmpeg(), ffprobe(), tesseract(), "", "", "", Duration.ofSeconds(3),
+                temp.resolve("owned-work"), ffmpeg(), ffprobe(), ParseProperties.OcrProvider.TESSERACT, tesseract(),
+                "", "", "qwen3.5-ocr", Duration.ofSeconds(3),
+                "", "", "", Duration.ofSeconds(3),
                 Duration.ofMinutes(2), Duration.ofMinutes(5), Duration.ofMinutes(10), 3, Duration.ofSeconds(10),
                 "", "media-integration", "producer", "consumer");
     }

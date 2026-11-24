@@ -42,6 +42,8 @@ public class VideoQaService {
     private static final int MAX_ASR_CHARS = 2400;
     private static final int MAX_OCR_CHARS = 800;
     private static final Pattern WHITESPACE = Pattern.compile("\\s+", Pattern.UNICODE_CHARACTER_CLASS);
+    private static final Pattern HORIZONTAL_WHITESPACE = Pattern.compile("\\h+");
+    private static final Pattern HAN_SPACES = Pattern.compile("(?<=\\p{IsHan}) +(?=\\p{IsHan})");
     private static final Pattern WORDS = Pattern.compile("[a-z0-9][a-z0-9_.-]*|\\p{IsHan}+");
     private static final Pattern VISUAL_HINT = Pattern.compile("画面|屏幕|截图|幻灯片|课件|投影|写着|代码|ppt");
     private static final Set<String> COMMON = Set.of("什么", "哪些", "怎么", "如何", "哪里", "哪个",
@@ -127,14 +129,28 @@ public class VideoQaService {
             sources.sort(Comparator.comparingLong(Source::startMs).thenComparing(Source::id));
             Set<String> seenOcr = new LinkedHashSet<>();
             List<Source> distinct = sources.stream()
-                    .filter(source -> source.kind() == Kind.ASR || seenOcr.add(normalize(source.text())))
+                    .filter(source -> {
+                        if (source.kind() == Kind.ASR) return true;
+                        String cleaned = cleanOcrForSearch(source.text());
+                        return !cleaned.isEmpty() && seenOcr.add(cleaned);
+                    })
                     .toList();
             String asr = join(distinct, Kind.ASR);
-            String ocr = join(distinct, Kind.OCR);
+            String ocr = String.join("\n", seenOcr);
             String text = (asr + "\n" + ocr).strip();
-            windows.add(new Window(start, contentKey(text), text, normalize(asr), normalize(ocr), distinct));
+            if (!text.isEmpty()) {
+                windows.add(new Window(start, contentKey(text), text, normalize(asr), normalize(ocr), distinct));
+            }
         });
         return windows;
+    }
+
+    private static String cleanOcrForSearch(String text) {
+        return text.replace("\uFEFF", "").replace("\u200B", "").lines()
+                .map(line -> HORIZONTAL_WHITESPACE.matcher(line).replaceAll(" ").strip())
+                .map(line -> HAN_SPACES.matcher(line).replaceAll(""))
+                .filter(line -> !line.isEmpty())
+                .collect(Collectors.joining("\n"));
     }
 
     private static String truncate(String text, int limit) {

@@ -9,12 +9,16 @@ app:
     base-url: "<DASHSCOPE_OPENAI_COMPATIBLE_BASE_URL>"
     api-key: "<DASHSCOPE_API_KEY>"
   parse:
-    # 准备好 RocketMQ、FFmpeg、Tesseract 中文语言数据与百炼 ASR 后开启。
+    # 准备好 RocketMQ、FFmpeg、Tesseract 和百炼 ASR 后开启。
     enabled: false
     nameserver: "<ROCKETMQ_NAMESERVER_HOST_PORT>"
     ffmpeg-command: "<FFMPEG_EXECUTABLE>"
     ffprobe-command: "<FFPROBE_EXECUTABLE>"
+    ocr-provider: tesseract
     ocr-command: "<TESSERACT_EXECUTABLE>"
+    # 可将 ocr-provider 改为 qwen，使用百炼 qwen3.5-ocr，默认复用 app.qa 的百炼地址和密钥。
+    # ocr-base-url: "<DASHSCOPE_OPENAI_COMPATIBLE_BASE_URL>"
+    # ocr-api-key: "<DASHSCOPE_API_KEY>"
     asr-url: "<DASHSCOPE_NON_STREAMING_ASR_ENDPOINT>"
     asr-model: "qwen-audio-3.1-asr-flash"
     asr-api-key: "<DASHSCOPE_API_KEY>"
@@ -40,5 +44,3 @@ spring:
       database: 0
       password: "<REDIS_PASSWORD>"
       timeout: 3s
-
-# 本轮仅接入语音转写，未接入总结或 Agent。

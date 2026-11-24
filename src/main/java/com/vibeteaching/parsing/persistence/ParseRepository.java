@@ -178,9 +178,13 @@ public class ParseRepository {
             List<Unit> currentUnits = units(taskId);
             // 服务层读取状态后，另一请求可能已经重试并得到“不确定”结果。
             // 必须在本次重排所持的任务行锁内重新核对，不能让旧请求绕过重复计费确认。
-            if (!confirmUncertain && currentUnits.stream().anyMatch(unit -> unit.status() == UnitStatus.UNCERTAIN)) {
-                throw new ParseException(HttpStatus.CONFLICT, "ASR_RESUBMIT_CONFIRMATION",
-                        "语音识别可能已被受理，确认可能重复计费后才能重试");
+            if (!confirmUncertain) {
+                Unit uncertain = currentUnits.stream().filter(unit -> unit.status() == UnitStatus.UNCERTAIN)
+                        .findFirst().orElse(null);
+                if (uncertain != null) {
+                    throw new ParseException(HttpStatus.CONFLICT, uncertain.kind().name() + "_RESUBMIT_CONFIRMATION",
+                            "云端识别可能已被受理，确认可能重复计费后才能重试");
+                }
             }
             for (Unit unit : currentUnits) {
                 if (unit.status() == UnitStatus.FAILED || unit.status() == UnitStatus.UNCERTAIN) {
@@ -192,21 +196,24 @@ public class ParseRepository {
         }));
     }
 
-    public int recover(Instant now, Duration queuedTimeout) {
+    public int recover(Instant now, Duration queuedTimeout, String localOcrProfile) {
         if (queuedTimeout.isNegative() || queuedTimeout.isZero()) throw new IllegalArgumentException("排队恢复期限必须大于零");
         Instant staleBefore = now.minus(queuedTimeout);
         List<String> taskIds = mapper.recoverableTaskIds(now, staleBefore);
         int recovered = 0;
         for (String taskId : taskIds) {
             Integer count = transaction.execute(status -> {
-                if (lockTask(taskId).isEmpty()) return 0;
+                Task task = lockTask(taskId).orElse(null);
+                if (task == null) return 0;
+                boolean localOcr = task.profileVersion().equals(localOcrProfile);
                 int changed = 0;
                 for (Unit unit : units(taskId)) {
                     if (unit.status() == UnitStatus.RUNNING && unit.leaseUntil() != null && !unit.leaseUntil().isAfter(now)) {
-                        if (unit.kind() == Kind.ASR) {
+                        if (unit.kind() == Kind.ASR || unit.kind() == Kind.OCR && !localOcr) {
                             // 请求可能已被供应商受理。没有确认结果时禁止自动再次付费提交。
                             finishOwned(work(unit), unit.leaseToken(), UnitStatus.UNCERTAIN, null,
-                                    "ASR_RESULT_UNCERTAIN", "执行中断，语音识别可能已受理；请确认后手动重试", now);
+                                    unit.kind().name() + "_RESULT_UNCERTAIN",
+                                    "执行中断，云端识别可能已受理；请确认后手动重试", now);
                         } else {
                             requeue(unit, now, now, false);
                         }

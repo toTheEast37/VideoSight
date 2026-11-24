@@ -61,9 +61,44 @@ class VideoAgentLoopTest {
     }
 
     @Test
+    void carriesOriginalFieldNameRequirementThroughBothReviewsAndChecksSupplementOnce() {
+        String subquestion = "讲者要求在回写前核对哪个字段？";
+        String originalQuestion = subquestion + "请给出字段原名。";
+        var model = new ScriptedModel(false) {
+            @Override public JsonNode plan(String question) {
+                return JSON.valueToTree(Map.of("questions", List.of(subquestion)));
+            }
+
+            @Override public JsonNode answer(String question, List<Source> sources) {
+                if (sources.stream().anyMatch(source -> source.id().equals("ASR-3"))) {
+                    return supported("执行令牌", "ASR-3", "执行令牌", "ANSWERED", "");
+                }
+                return supported("请查任务说明中的字段。", "ASR-2", "任务显示等待", "ANSWERED", "");
+            }
+
+            @Override public JsonNode review(String original, String question, Answer draft, List<Source> sources) {
+                assertThat(original).isEqualTo(originalQuestion);
+                assertThat(question).isEqualTo(subquestion);
+                reviews.add(question);
+                assertThat(draft.status()).isEqualTo(Status.ANSWERED);
+                if (sources.stream().noneMatch(source -> source.id().equals("ASR-3"))) {
+                    return insufficient("限定甲主题");
+                }
+                return supported("执行令牌", "ASR-3", "执行令牌", "ANSWERED", "");
+            }
+        };
+        var result = agent(model).ask(14, originalQuestion).subquestions().get(0);
+        assertThat(result.status()).isEqualTo(Status.ANSWERED);
+        assertThat(result.supplement()).isEqualTo(Supplement.COMPLETED);
+        assertThat(result.items().get(0).citations()).extracting(Source::text).containsExactly("执行令牌");
+        assertThat(model.reviews).containsExactly(subquestion, subquestion);
+        assertThat(model.reranked).containsExactly("限定甲主题");
+    }
+
+    @Test
     void rejectsCriticCitationThatDoesNotComeFromSelectedEvidence() {
         var model = new ScriptedModel(false) {
-            @Override public JsonNode review(String question, Answer draft, List<Source> sources) {
+            @Override public JsonNode review(String original, String question, Answer draft, List<Source> sources) {
                 return supported("错误结论", "ASR-7", "不存在的引文", "ANSWERED", "");
             }
         };
@@ -136,7 +171,7 @@ class VideoAgentLoopTest {
             };
         }
 
-        @Override public JsonNode review(String question, Answer draft, List<Source> sources) {
+        @Override public JsonNode review(String original, String question, Answer draft, List<Source> sources) {
             reviews.add(question);
             return switch (question) {
                 case "领取" -> supported("审查修正后的内容", "ASR-0", "一位消费者", "ANSWERED", "");

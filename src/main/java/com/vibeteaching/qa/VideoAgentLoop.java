@@ -37,32 +37,32 @@ public class VideoAgentLoop {
         List<Review> firstRound = new ArrayList<>();
         for (String subquestion : plan(model.plan(question))) {
             List<Source> sources = qa.retrieve(context, subquestion, false);
-            firstRound.add(executeAndReview(context, subquestion, sources));
+            firstRound.add(executeAndReview(context, question, subquestion, sources));
         }
         List<SubAnswer> answers = new ArrayList<>();
         for (Review first : firstRound) {
             answers.add(first.answer().status() == Status.ANSWERED
-                    ? subAnswer(first, Supplement.NOT_NEEDED) : supplement(context, first));
+                    ? subAnswer(first, Supplement.NOT_NEEDED) : supplement(context, question, first));
         }
         return result(context, List.copyOf(answers));
     }
 
-    private Review executeAndReview(SearchContext context, String question, List<Source> sources) {
+    private Review executeAndReview(SearchContext context, String originalQuestion, String question, List<Source> sources) {
         Answer draft = VideoQaService.validateAnswer(context.task(), sources, model.answer(question, sources));
-        JsonNode verdict = model.review(question, draft, sources);
+        JsonNode verdict = model.review(originalQuestion, question, draft, sources);
         Answer reviewed = VideoQaService.validateAnswer(context.task(), sources, verdict);
         String nextQuery = verdict.path("nextQuery").isTextual() ? verdict.path("nextQuery").textValue().strip() : "";
         if (nextQuery.isBlank() || nextQuery.length() > VideoQaService.MAX_QUESTION_LENGTH) nextQuery = question;
         return new Review(question, sources, reviewed, nextQuery);
     }
 
-    private SubAnswer supplement(SearchContext context, Review first) {
+    private SubAnswer supplement(SearchContext context, String originalQuestion, Review first) {
         try {
             List<Source> additional = qa.retrieve(context, first.nextQuery(), true);
             var combined = new LinkedHashMap<String, Source>();
             additional.forEach(source -> combined.put(source.id(), source));
             first.sources().forEach(source -> combined.putIfAbsent(source.id(), source));
-            Review verified = executeAndReview(context, first.question(), List.copyOf(combined.values()));
+            Review verified = executeAndReview(context, originalQuestion, first.question(), List.copyOf(combined.values()));
             return subAnswer(verified, Supplement.COMPLETED);
         } catch (QaException failure) {
             // 补证调用失败时，保留首轮已核对的结论并向页面报告本次失败。

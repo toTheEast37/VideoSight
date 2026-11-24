@@ -78,7 +78,7 @@ public class MediaPreparation {
         }
     }
 
-    /** 先核对对象并有界下载；下载失败尚未调用 ASR，不属于计费结果不确定。 */
+    /** 先核对对象并有界下载；此时尚未调用云端识别服务。 */
     public <T> T withInput(String inputKey, Function<Path, T> action) {
         if (inputKey == null || !inputKey.startsWith("parsing/") || inputKey.contains("..")) {
             throw failure("MEDIA_INPUT_KEY_INVALID", "识别输入对象编号无效", false);
