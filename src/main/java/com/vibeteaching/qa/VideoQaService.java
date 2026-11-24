@@ -38,6 +38,7 @@ public class VideoQaService {
     public static final int MAX_QUESTION_LENGTH = 500;
     private static final long WINDOW_MS = 60_000;
     private static final int TOP_WINDOWS = 3;
+    private static final int RERANK_CANDIDATES = 10;
     private static final int MAX_ASR_CHARS = 2400;
     private static final int MAX_OCR_CHARS = 800;
     private static final Pattern WHITESPACE = Pattern.compile("\\s+", Pattern.UNICODE_CHARACTER_CLASS);
@@ -64,10 +65,22 @@ public class VideoQaService {
     }
 
     public Answer ask(long assetId, String input) {
+        String question = validateQuestion(assetId, input);
+        SearchContext context = prepare(assetId);
+        if (context.empty()) return result(context.task(), Status.INSUFFICIENT_EVIDENCE, List.of());
+        List<Source> sources = retrieve(context, question, false);
+        return validateAnswer(context.task(), sources, model.answer(question, sources));
+    }
+
+    static String validateQuestion(long assetId, String input) {
         String question = input == null ? "" : input.strip();
         if (assetId <= 0 || question.isBlank() || question.length() > MAX_QUESTION_LENGTH) {
             throw new QaException(HttpStatus.BAD_REQUEST, "INVALID_QA_REQUEST", "请选择视频并输入 1 至 500 字符的问题");
         }
+        return question;
+    }
+
+    SearchContext prepare(long assetId) {
         if (!properties.ready()) {
             throw new QaException(HttpStatus.SERVICE_UNAVAILABLE, "QA_NOT_CONFIGURED", "视频问答尚未完成百炼配置");
         }
@@ -80,18 +93,23 @@ public class VideoQaService {
         }
 
         List<Window> windows = windows(task.units());
-        if (windows.isEmpty()) return result(task, Status.INSUFFICIENT_EVIDENCE, List.of());
-        Map<String, float[]> vectors = windowVectors(assetId, windows);
+        Map<String, float[]> vectors = windows.isEmpty() ? Map.of() : windowVectors(assetId, windows);
+        return new SearchContext(task, windows, vectors);
+    }
+
+    List<Source> retrieve(SearchContext context, String question, boolean rerank) {
         float[] queryVector = model.embed(List.of(question)).get(0);
         QueryTerms terms = queryTerms(question);
-        List<Source> sources = windows.stream()
-                .map(window -> new ScoredWindow(window, score(window, terms, queryVector, vectors.get(window.key()))))
+        List<Window> selected = context.windows().stream()
+                .map(window -> new ScoredWindow(window, score(window, terms, queryVector, context.vectors().get(window.key()))))
                 .sorted(Comparator.comparingDouble(ScoredWindow::score).reversed()
                         .thenComparingLong(item -> item.window().startMs()))
-                .limit(TOP_WINDOWS)
-                .flatMap(item -> item.window().sources().stream())
+                .limit(rerank ? RERANK_CANDIDATES : TOP_WINDOWS)
+                .map(ScoredWindow::window)
                 .toList();
-        return validateAnswer(task, sources, model.answer(question, sources));
+        if (!rerank) return selected.stream().flatMap(window -> window.sources().stream()).toList();
+        return model.rerank(question, selected.stream().map(Window::text).toList()).stream()
+                .limit(TOP_WINDOWS).flatMap(index -> selected.get(index).sources().stream()).toList();
     }
 
     private List<Window> windows(List<UnitView> units) {
@@ -278,6 +296,9 @@ public class VideoQaService {
     public record Source(String id, Kind kind, long startMs, long endMs, String text) { }
     public record Item(String text, List<Source> citations) { }
     public record Answer(long assetId, String parseTaskId, boolean parsePartial, Status status, List<Item> items) { }
+    record SearchContext(TaskView task, List<Window> windows, Map<String, float[]> vectors) {
+        boolean empty() { return windows.isEmpty(); }
+    }
     private record Window(long startMs, String key, String text, String asr, String ocr, List<Source> sources) { }
     private record ScoredWindow(Window window, double score) { }
     private record QueryTerms(Set<String> ordinary, Set<String> visual) { }

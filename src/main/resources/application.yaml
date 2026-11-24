@@ -24,6 +24,7 @@ app:
     enabled: false
     embedding-model: qwen3.7-text-embedding-flash
     answer-model: qwen-flash
+    rerank-model: qwen3.7-text-rerank
     timeout: 20s
   parse:
     enabled: false

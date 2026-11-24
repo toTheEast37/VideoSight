@@ -116,6 +116,9 @@ h3 { margin: 0; font-size: 12px; font-weight: 600; }
 .qa-panel label { display: block; font-size: 13px; margin-bottom: 7px; }
 .qa-panel textarea { display: block; resize: vertical; width: 100%; border: 1px solid #dfe6d7; border-radius: 7px; font: inherit; padding: 10px; color: inherit; margin-bottom: 10px; }
 .qa-panel .notice:empty { display: none; }
+.qa-subquestion { margin-top: 18px; overflow-wrap: anywhere; }
+.qa-subquestion h3 { font-size: 14px; line-height: 1.6; }
+.qa-subquestion-status { color: var(--muted); font-size: 12px; margin: 5px 0 10px; line-height: 1.7; }
 .qa-item { border-top: 1px solid var(--line); padding: 12px 0; }
 .qa-answer { font-size: 14px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
 .qa-item blockquote { margin: 8px 0 0; padding: 7px 12px 10px; border-left: 3px solid #c8d7c2; background: #f5f8f1; }

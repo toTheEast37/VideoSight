@@ -28,7 +28,7 @@ class VideoQaServiceTest {
     private static final String QUESTION = "画面哪里出现 lease_token？";
     private static final String OCR = "UPDATE ... WHERE lease_token = ?";
     private static final QaProperties CONFIG = new QaProperties(true, "https://example.test/compatible-mode/v1",
-            "test-only", "embedding-test", "answer-test", Duration.ofSeconds(1));
+            "test-only", "embedding-test", "answer-test", "rerank-test", Duration.ofSeconds(1));
     private final ObjectMapper json = new ObjectMapper();
 
     @Test
