@@ -20,6 +20,11 @@ management:
 
 # 开发暂用参数，可调整；不代表已验证 2 GiB 文件。
 app:
+  qa:
+    enabled: false
+    embedding-model: qwen3.7-text-embedding-flash
+    answer-model: qwen-flash
+    timeout: 20s
   parse:
     enabled: false
     profile-version: v1

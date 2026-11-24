@@ -39,6 +39,7 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.web.client.RestClient;
+import com.vibeteaching.qa.persistence.VideoVectorMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -68,10 +69,16 @@ class MySqlMapperIntegrationTest {
             var source = new DriverManagerDataSource(testUrl, config.getUsername(), config.getPassword());
             var jdbc = new JdbcTemplate(source);
             Flyway flyway = Flyway.configure().dataSource(source).locations("classpath:db/migration").load();
-            assertThat(flyway.migrate().migrationsExecuted).isEqualTo(3);
+            assertThat(flyway.migrate().migrationsExecuted).isEqualTo(4);
 
             UploadRepository uploads = RepositoryTestSupport.uploads(source);
             VideoAsset asset = uploadAndTestRollback(uploads, jdbc);
+            var vectorSession = RepositoryTestSupport.mapperSession(source);
+            vectorSession.getConfiguration().addMapper(VideoVectorMapper.class);
+            var vectors = vectorSession.getMapper(VideoVectorMapper.class);
+            String vectorKey = "b".repeat(64);
+            vectors.save(asset.assetId(), vectorKey, "[0.1,0.2]");
+            vectors.save(asset.assetId(), vectorKey, "[0.4,0.6]");
             ParseRepository parses = RepositoryTestSupport.parses(source);
             String taskId = parseAndTestRecovery(parses, asset.assetId());
             assertThat(jdbc.queryForObject("SELECT DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s.%f') "
@@ -81,6 +88,10 @@ class MySqlMapperIntegrationTest {
             assertThat(Flyway.configure().dataSource(reopened).locations("classpath:db/migration").load()
                     .migrate().migrationsExecuted).isZero();
             assertThat(RepositoryTestSupport.uploads(reopened).findAsset(asset.assetId())).contains(asset);
+            var reopenedVectorSession = RepositoryTestSupport.mapperSession(reopened);
+            reopenedVectorSession.getConfiguration().addMapper(VideoVectorMapper.class);
+            assertThat(reopenedVectorSession.getMapper(VideoVectorMapper.class).find(asset.assetId(), List.of(vectorKey)))
+                    .containsExactly(new VideoVectorMapper.VectorRow(vectorKey, "[0.4,0.6]"));
             ParseRepository reread = RepositoryTestSupport.parses(reopened);
             assertThat(reread.findTask(taskId)).hasValueSatisfying(task -> {
                 assertThat(task.status()).isEqualTo(TaskStatus.SUCCEEDED);

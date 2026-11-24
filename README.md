@@ -1,14 +1,15 @@
 # VideoSight：视频上传与文字解析学习工程
 
-通过逐步重建 DOVideo 的能力，学习需求边界、实现、验收和失败处理。当前提供视频上传、后台语音转写和画面文字识别，字幕总结、RAG 和 Agent 暂缓。
+通过逐步重建 DOVideo 的能力，学习需求边界、实现、验收和失败处理。当前提供视频上传、后台文字识别和基于原文证据的单视频单轮问答。
 
 ## 当前状态
 
 - 已实现分片上传、刷新后重选原文件续传、按轮补传、请求幂等和视频资产查询/读取。
 - 已实现独立解析任务：FFmpeg 提取音频与抽样画面，百炼 ASR 转写语音，Tesseract 识别中英文；结果逐项保存，页面可以找回任务、查看文字和重试失败部分。
+- 资料库中选择「提问」，可以针对已解析的单个视频提问。回答附语音或画面原文引文，点击时间定位视频。问答向量存现有 MySQL，在 Java 中完成加权排序。
 - MySQL 保存上传和解析事实，解析处理单元同时保存消息派发状态；Redis 保存临时上传进度，MinIO 保存视频和识别输入，RocketMQ 派发处理单元。数据库短事务领取任务，长耗时识别在事务外执行。
 - 真实本机服务与浏览器已完成上传和约 8 秒测试视频的完整解析、刷新及应用重启后读取。识别质量和大文件性能的证据范围见任务记录。
-- 通用配置默认关闭上传和解析；本机被忽略的 dev 配置已连接服务并启用两者。没有登录、内容秒传或 Agent。
+- 通用配置默认关闭上传、解析和问答。通过被忽略的本机 dev 配置启用所需能力，问答可读取已保存的解析结果。
 - 提交和推送须有用户明确指令；私密配置、运行数据、媒体和构建产物不入库。
 
 ## 分支协作
@@ -98,6 +99,25 @@ Invoke-WebRequest 'http://127.0.0.1:18080/actuator/health' -Headers @{ Accept = 
 ```
 
 默认关闭上传时，该健康状态只表示基础工程可用，不能证明数据库、Redis、MinIO 已连通。
+
+## 启用单视频问答
+
+在被忽略的 `config/application-dev.yaml` 中启用 `app.qa.enabled`，并填写 `app.qa.base-url` 和 `app.qa.api-key`。百炼业务空间的兼容地址以 `/compatible-mode/v1` 结尾。沿用上传启用后的 MySQL 连接，启动时由 Flyway 建立片段向量表。
+
+在资料库选择有已保存解析结果的视频，点击「提问」。首次提问按需生成并保存片段向量，之后可复用。问题和回答按单轮处理。
+
+## 召回实验
+
+在仓库根目录用 Node.js 执行，本次用 Node.js 24 验证。实时运行前，从本地私密 dev 配置向当前进程提供 `DASHSCOPE_API_KEY`。如果使用北京业务空间的专属域名，同时设置 `VIDEOSIGHT_EMBEDDING_ORIGIN` 为该 HTTPS 域名，不带接口路径。
+
+```powershell
+node scripts/retrieval-experiment.mjs
+node scripts/retrieval-experiment.mjs --cached
+node scripts/retrieval-experiment.mjs --rerank
+node scripts/retrieval-experiment.mjs --rerank-all
+```
+
+第一条提交固定的模拟 ASR/OCR 文本与问题，保存百炼向量及逐题排名到 `work/retrieval-experiment/`。第二条离线回放。`--rerank` 复用已保存的向量，每题重排前 10 段，输出 `rerank-results.json`。`--rerank-all` 在同一轮分别重排前 10 段和全部 24 段，每题发出两次请求，输出 `rerank-comparison.json`。实验方法和实际结果分别见[技术记录](docs/technical-notes.md#召回对照实验)与[任务与证据](docs/tasks.md#视频片段召回实验2026-11-23)。
 
 ## 文件与状态的位置
 
