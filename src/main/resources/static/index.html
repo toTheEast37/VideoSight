@@ -69,7 +69,7 @@
             <div><p class="section-index">02 / 资料库 · 最近 100 条</p><h2 id="library-title">已保存的视频 <span id="asset-count" class="count"></span></h2></div>
             <button class="text-button" id="refresh-assets" type="button">刷新列表 <span aria-hidden="true">↻</span></button>
           </div>
-          <p class="library-description">上传完成的视频会长期显示在这里，刷新后也能重新打开。</p>
+          <p class="library-description">选择视频查看已保存的语音和画面文字，或基于解析结果提问。</p>
           <div class="library-notice" id="library-notice" role="status" aria-live="polite">正在读取视频列表…</div>
           <div class="asset-list" id="asset-list"></div>
 
@@ -80,9 +80,55 @@
           </section>
         </section>
       </div>
+
+      <section class="panel parse-panel" id="parse-panel" aria-labelledby="parse-title" hidden>
+        <div class="section-heading">
+          <div><p class="section-index">03 / 文字解析</p><h2 id="parse-title">视频文字</h2></div>
+          <button class="text-button" id="parse-close" type="button">收起</button>
+        </div>
+        <p class="parse-settings" id="parse-settings"></p>
+        <div class="parse-status-row"><strong id="parse-status">状态待确认</strong><span id="parse-updated"></span></div>
+        <div class="notice" id="parse-notice" role="status" aria-live="polite"></div>
+        <div class="parse-actions">
+          <button class="button button-primary" id="parse-start" type="button" disabled>开始解析文字</button>
+          <button class="button button-secondary" id="parse-retry" type="button" hidden>重试未完成的部分</button>
+          <button class="button button-secondary" id="parse-uncertain-retry" type="button" hidden>确认可能重复计费并重试</button>
+          <button class="text-button" id="parse-refresh" type="button">刷新状态</button>
+        </div>
+        <p class="parse-uncertain-help" id="parse-uncertain-help" hidden>有识别请求未能确认是否已被受理。再次调用可能重复计费；确认接受后点击上方按钮。已经保存的成功结果会保留。</p>
+        <div class="parse-results" id="parse-results" hidden>
+          <div class="parse-prepare" id="parse-prepare"></div>
+          <div class="parse-branches">
+            <section class="parse-branch" aria-labelledby="parse-asr-title">
+              <h3 id="parse-asr-title">语音文字</h3>
+              <p class="parse-source-help">时间表示音频分片范围，不是每句话的准确时间。</p>
+              <div id="parse-asr"></div>
+            </section>
+            <section class="parse-branch" aria-labelledby="parse-ocr-title">
+              <h3 id="parse-ocr-title">画面文字</h3>
+              <p class="parse-source-help">时间表示抽样截图时刻；短暂画面可能遗漏。代码符号和缩进需对照原视频核对。</p>
+              <div id="parse-ocr"></div>
+            </section>
+          </div>
+        </div>
+      </section>
+      <section class="panel qa-panel" id="qa-panel" aria-labelledby="qa-title" hidden>
+        <div class="section-heading">
+          <div><h2 id="qa-title">视频问答</h2><p class="qa-asset" id="qa-asset"></p></div>
+          <button class="text-button" id="qa-close" type="button">收起</button>
+        </div>
+        <form id="qa-form">
+          <label for="qa-question">问题</label>
+          <textarea id="qa-question" name="question" rows="2" maxlength="500" required
+            placeholder="这段视频讲了什么？"></textarea>
+          <button class="button button-primary" id="qa-submit" type="submit">查证并回答</button>
+        </form>
+        <p class="notice" id="qa-notice" role="status" aria-live="polite"></p>
+        <div id="qa-result" aria-live="polite"></div>
+      </section>
     </main>
 
-    <footer>VideoSight <span>视频上传 · 本地单人使用</span></footer>
+    <footer>VideoSight <span>视频资料与文字 · 本地单人使用</span></footer>
   </div>
 </body>
 </html>

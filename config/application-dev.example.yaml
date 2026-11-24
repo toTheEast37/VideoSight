@@ -4,6 +4,24 @@ server:
   port: 8080
 
 app:
+  qa:
+    enabled: false
+    base-url: "<DASHSCOPE_OPENAI_COMPATIBLE_BASE_URL>"
+    api-key: "<DASHSCOPE_API_KEY>"
+  parse:
+    # 准备好 RocketMQ、FFmpeg、Tesseract 和百炼 ASR 后开启。
+    enabled: false
+    nameserver: "<ROCKETMQ_NAMESERVER_HOST_PORT>"
+    ffmpeg-command: "<FFMPEG_EXECUTABLE>"
+    ffprobe-command: "<FFPROBE_EXECUTABLE>"
+    ocr-provider: tesseract
+    ocr-command: "<TESSERACT_EXECUTABLE>"
+    # 可将 ocr-provider 改为 qwen，使用百炼 qwen3.5-ocr，默认复用 app.qa 的百炼地址和密钥。
+    # ocr-base-url: "<DASHSCOPE_OPENAI_COMPATIBLE_BASE_URL>"
+    # ocr-api-key: "<DASHSCOPE_API_KEY>"
+    asr-url: "<DASHSCOPE_NON_STREAMING_ASR_ENDPOINT>"
+    asr-model: "qwen-audio-3.1-asr-flash"
+    asr-api-key: "<DASHSCOPE_API_KEY>"
   upload:
     # 填写并准备好三项外部服务后改成 true。
     enabled: false
@@ -15,7 +33,7 @@ app:
 
 spring:
   datasource:
-    # 先建立本项目独立的空数据库；Flyway 仅在该库中创建上传表。
+    # 先建立本项目独立的空数据库；Flyway 仅在该库中创建上传与解析表。
     url: "<MYSQL_JDBC_URL>"
     username: "<MYSQL_USERNAME>"
     password: "<MYSQL_PASSWORD>"
@@ -26,5 +44,3 @@ spring:
       database: 0
       password: "<REDIS_PASSWORD>"
       timeout: 3s
-
-# 百炼与 Agent 未接入，本轮无需 API key。

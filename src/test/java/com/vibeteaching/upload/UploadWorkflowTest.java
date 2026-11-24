@@ -1,5 +1,6 @@
 package com.vibeteaching.upload;
 
+import com.vibeteaching.persistence.RepositoryTestSupport;
 import com.vibeteaching.upload.config.UploadProperties;
 import com.vibeteaching.upload.model.UploadSession;
 import com.vibeteaching.upload.model.UploadStatus;
@@ -14,7 +15,6 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import java.io.ByteArrayInputStream;
@@ -248,7 +248,7 @@ class UploadWorkflowTest {
     }
 
     private UploadRepository newRepository() {
-        return new UploadRepository(new JdbcTemplate(dataSource), new DataSourceTransactionManager(dataSource));
+        return RepositoryTestSupport.uploads(dataSource);
     }
 
     private UploadService newService() { return new UploadService(newRepository(), progress, objects, properties, clock); }

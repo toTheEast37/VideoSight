@@ -1,5 +1,6 @@
 package com.vibeteaching.upload.persistence;
 
+import com.vibeteaching.persistence.RepositoryTestSupport;
 import com.vibeteaching.upload.model.UploadSession;
 import com.vibeteaching.upload.model.UploadStatus;
 import com.vibeteaching.upload.model.VideoAsset;
@@ -8,7 +9,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import java.time.Instant;
@@ -140,7 +140,7 @@ class UploadRepositoryTest {
     }
 
     private UploadRepository newRepository() {
-        return new UploadRepository(new JdbcTemplate(dataSource), new DataSourceTransactionManager(dataSource));
+        return RepositoryTestSupport.uploads(dataSource);
     }
 
     private UploadSession candidate(String requestKey) {

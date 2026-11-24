@@ -1,0 +1,200 @@
+{
+  "name": "后端工程课程（人工编写的 ASR/OCR 对照片段）",
+  "clips": [
+    {
+      "id": "C01", "startSec": 0, "title": "上传初始化",
+      "summary": "一次上传意图对应一个会话，数据库通过请求键唯一约束阻止并发创建重复记录。",
+      "keywords": ["上传会话", "幂等", "唯一约束"],
+      "asr": "嗯，两个页面同时提交初始化的时候，都先走会话表。数据库的唯一键只让一条插入，撞了键的人把已经存在的会话查回来。会话编号才用来发后面的片。",
+      "ocr": [{"atSec": 15, "text": "POST /api/uploads · UNIQUE (request_key) → uploadId"}]
+    },
+    {
+      "id": "C02", "startSec": 60, "title": "初始化响应丢失",
+      "summary": "刷新后继续使用第一次初始化前保存的请求键，即使没收到响应也可找回原上传会话。",
+      "keywords": ["浏览器持久化", "初始化响应", "原请求键"],
+      "asr": "服务端可能已经建好了，只是回包在路上没了。我们发第一次请求之前，就把这个随机键放进浏览器的本地存储。重选同一个文件以后继续拿这个键请求，不生成一个新的。",
+      "ocr": [{"atSec": 85, "text": "localStorage: requestKey · 复用原记录"}]
+    },
+    {
+      "id": "C03", "startSec": 120, "title": "分片进度",
+      "summary": "Redis 分开保存分片元数据与已完成序号，重试时由服务端进度决定要补的部分。",
+      "keywords": ["Redis", "分片", "缺片"],
+      "asr": "看这个进度条，浏览器自己发送成功了几个不算数。对象写成功以后服务器才登记这个编号。下次继续先读服务端登记的序号，拿总编号减，剩下的才补。",
+      "ocr": [{"atSec": 140, "text": "Hash · Set · SMEMBERS · missing parts"}]
+    },
+    {
+      "id": "C04", "startSec": 180, "title": "最终文件与资产登记",
+      "summary": "对象合并和资产写库分别完成。对象已生成但写库失败时，重试验证并复用对象。",
+      "keywords": ["合并", "资产保存", "失败重试"],
+      "asr": "文件合起来之后，还得登记成可用资产。假设对象已经写完，数据库那步崩了，页面还是不能显示保存成功。下一次校验那个合好的对象，能用的话就接着做入库。",
+      "ocr": [{"atSec": 210, "text": "FINALIZING → video_asset → COMPLETED"}]
+    },
+    {
+      "id": "C05", "startSec": 240, "title": "会话过期后的已保存资产",
+      "summary": "临时上传进度过期后，已经登记的资产仍可通过数据库查找。",
+      "keywords": ["TTL", "资产列表", "历史读取"],
+      "asr": "缓存到期就会消失，所以它不能当作品列表。只要当时保存成了资产，你关掉页面过两天再进来，列表还是可以从数据库读出来，播放走正式存储的文件。",
+      "ocr": [{"atSec": 270, "text": "Redis TTL ≠ video_asset 生命周期"}]
+    },
+    {
+      "id": "C06", "startSec": 300, "title": "文件身份和续传",
+      "summary": "断点续传需要重新选择原文件，指纹不同要拒绝续传以避免拼接错误。",
+      "keywords": ["续传", "文件指纹", "冲突"],
+      "asr": "两个文件碰巧叫一个名字、长度也一样，内容不一定一样。这里根据分片摘要按顺序拼起来得到文件指纹。跟原会话对不上就停下，否则可能把两个视频拼在一起。",
+      "ocr": [{"atSec": 330, "text": "fileFingerprint · SHA-256 · HTTP 409"}]
+    },
+    {
+      "id": "C07", "startSec": 360, "title": "视频拖动播放",
+      "summary": "浏览器拖动播放进度时，按字节区间读取媒体，服务端返回部分内容。",
+      "keywords": ["播放", "字节区间", "HTTP"],
+      "asr": "拖到中间时浏览器不用再收完整文件。它带上字节范围，服务端返回从那个偏移量开始的一段，以及这段在整个对象里的位置。",
+      "ocr": [{"atSec": 395, "text": "Range: bytes=4096- · HTTP 206 Partial Content · Content-Range"}]
+    },
+    {
+      "id": "C08", "startSec": 420, "title": "浏览器暂停上传",
+      "summary": "暂停终止页面当前请求，已经由服务端接收的分片在继续时仍可复用。",
+      "keywords": ["暂停", "请求取消", "继续上传"],
+      "asr": "点暂停先取消浏览器正在等的请求。服务端有可能刚好收完了这一片，所以本地不猜它写成功没。继续的时候会查询缺片，再开始补发。",
+      "ocr": [{"atSec": 446, "text": "AbortController.abort() · resume → GET upload status"}]
+    },
+    {
+      "id": "C09", "startSec": 480, "title": "解析任务的受理状态",
+      "summary": "提交解析后先持久受理并返回任务编号，前端轮询最终状态与文字。",
+      "keywords": ["异步", "HTTP 202", "轮询"],
+      "asr": "接单那一刻还没有文字，只能告诉浏览器任务登记好了。这个编号可以在你刷新页面后读回来，前端定时问状态，等它到完成才展示已保存的内容。",
+      "ocr": [{"atSec": 510, "text": "HTTP 202 Accepted · taskId → GET task"}]
+    },
+    {
+      "id": "C10", "startSec": 540, "title": "音频提取",
+      "summary": "媒体预处理将音轨转为适合 ASR 的单声道音频，并按固定时间分片。",
+      "keywords": ["ASR", "FFmpeg", "音频分片"],
+      "asr": "视频不用整段上传给识别服务。先拿到音轨，转成单声道的标准格式，再差不多一分钟剪成一块。这个起止点属于整块录音，没拿到每句的对齐。",
+      "ocr": [{"atSec": 565, "text": "PCM WAV · -ar 16000 -ac 1 · 60 s"}]
+    },
+    {
+      "id": "C11", "startSec": 600, "title": "画面抽样",
+      "summary": "OCR 读取定时抽样截图；文字符号有可能识别错，也可能遗漏两次抽样之间的画面。",
+      "keywords": ["OCR", "截图", "时间戳"],
+      "asr": "每隔五秒抓一张。要是某句话只闪现一秒，抽样点没落到它上面，看不出来。识别出来的文字也只能确定是在那张截图的时刻看到的。",
+      "ocr": [{"atSec": 635, "text": "Tesseract · chi_sim+eng · frame time = sample time"}]
+    },
+    {
+      "id": "C12", "startSec": 660, "title": "识别为空与无音轨",
+      "summary": "无音轨跳过语音识别，有输入且正常返回空文字属于有效空结果。",
+      "keywords": ["无音轨", "空结果", "识别状态"],
+      "asr": "先看有没有音轨。没有的话连语音服务都不请求。另一种是收到空文字，但服务确实正常完成，比如这张截图没写字，那一项依然可以记成功。",
+      "ocr": [{"atSec": 690, "text": "SKIPPED：无音轨 · SUCCEEDED：允许空文字"}]
+    },
+    {
+      "id": "C13", "startSec": 720, "title": "语音调用的未知结果",
+      "summary": "ASR 响应丢失时供应商可能已处理，系统保留不确定状态并等待用户确认。",
+      "keywords": ["ASR", "超时", "重复计费"],
+      "asr": "请求发出去了，但只等到连接断掉，不能判断对方做了没有。直接再发就可能扣第二次钱。这一步先停下来，请用户明确同意再重试。",
+      "ocr": [{"atSec": 750, "text": "ASR UNCERTAIN · confirmUncertain"}]
+    },
+    {
+      "id": "C14", "startSec": 780, "title": "消息队列停机恢复",
+      "summary": "待派发单元已保存在数据库，Broker 暂时不可用时显示排队，恢复后继续发送。",
+      "keywords": ["RocketMQ", "排队", "持久化"],
+      "asr": "把队列先关掉，再点解析。你看请求还是接到了，单元在数据库里排队。发消息的进程每轮再检查一下，队列起来以后你不用重新点，原单元会继续。",
+      "ocr": [{"atSec": 815, "text": "QUEUED · attempts = 0 · next_dispatch_at"}]
+    },
+    {
+      "id": "C15", "startSec": 840, "title": "发布回执与再次投递",
+      "summary": "Broker 已收消息而发送回执未写入时，扫描器可能重发当前代，消费端核验状态。",
+      "keywords": ["重复投递", "发送回执", "当前代"],
+      "asr": "消息可能已经进了队列，只是这次没记下发过。下一次扫描会再发一条同代的。消费端谁先把行领走就谁做，后来的看到状态变了就退出。",
+      "ocr": [{"atSec": 875, "text": "dispatched_at · broker ACK · same generation"}]
+    },
+    {
+      "id": "C16", "startSec": 900, "title": "领取处理单元",
+      "summary": "消费者用短事务从等待状态领取同代单元，处理过程放在事务之外。",
+      "keywords": ["消费者", "短事务", "领取"],
+      "asr": "同一个消息到两次，先看单元是不是等待状态、版本是否对得上。第一个成功更新的才去调用识别。数据库事务到这里就结束，不能拿着锁去等识别接口。",
+      "ocr": [{"atSec": 920, "text": "UPDATE parse_unit … WHERE status='QUEUED' AND generation=?"}]
+    },
+    {
+      "id": "C17", "startSec": 960, "title": "执行结果回写",
+      "summary": "工作者回写前需确认当前执行身份，避免过期工作者覆盖新结果。",
+      "keywords": ["工作者", "回写", "旧结果"],
+      "asr": "做完才回来时，活可能已经被重新派给别人了。保存结果之前，还得核对它是不是当前这一次的工作者。要是更新了零行，这份结果就作废。",
+      "ocr": [{"atSec": 985, "text": "SET result_text=? WHERE status='RUNNING' AND generation=? AND lease_token=?"}]
+    },
+    {
+      "id": "C18", "startSec": 1020, "title": "租约超时如何恢复",
+      "summary": "处理期间续租，过期后按阶段采取不同的恢复方式，ASR 保留不确定状态。",
+      "keywords": ["心跳", "租约", "阶段重试"],
+      "asr": "程序活着会定时延长执行期限。要是整台进程断了，本地提取和截图识别可以增加版本后重新排队。语音请求可能还在云上做，得先让人确认。",
+      "ocr": [{"atSec": 1045, "text": "lease_until · OCR → QUEUED · ASR → UNCERTAIN"}]
+    },
+    {
+      "id": "C19", "startSec": 1080, "title": "派发状态合表",
+      "summary": "只保留解析单元当前代派发状态，用同一行表达任务等待与下一次发送时间。",
+      "keywords": ["Outbox", "合表", "状态迁移"],
+      "asr": "这个发送表原来只有解析这一个使用方。一个单元同一时间只有一个有效版本，所以把等待发送和已发送的标记，都挪到处理单元自己这行。",
+      "ocr": [{"atSec": 1105, "text": "parse_outbox → parse_unit · dispatch_attempts · next_dispatch_at"}]
+    },
+    {
+      "id": "C20", "startSec": 1140, "title": "兼容旧 Redis 的哈希写入",
+      "summary": "旧 Redis 版本通过逐字段写入兼容同一份哈希元数据更新。",
+      "keywords": ["Redis 3.2", "哈希", "Lua 兼容"],
+      "asr": "新服务器一条命令带很多对字段值都行，这台旧版本会报参数数量不对。把脚本里的批量一次写改成每对字段各写一次，整个脚本仍一次执行。",
+      "ocr": [{"atSec": 1165, "text": "Redis 3.2: redis.call('HSET', key, field, value)"}]
+    },
+    {
+      "id": "C21", "startSec": 1200, "title": "回填现有任务",
+      "summary": "升级前快照，按任务类型序号和代数回填当前派发数据，保留旧的识别文本。",
+      "keywords": ["Flyway", "回填", "历史文字"],
+      "asr": "先停掉旧版本，拍下库快照。迁移只把同任务、同类型、同序号、同版本号的发送状态抄过来。原先已经识别好的字一行都别动。",
+      "ocr": [{"atSec": 1230, "text": "V3__merge_parse_dispatch_into_units.sql · task_id / kind / unit_index / generation"}]
+    },
+    {
+      "id": "C22", "startSec": 1260, "title": "检查迁移记录",
+      "summary": "迁移工具通过版本和校验和判断是否执行过，已在旧库执行的脚本应保留。",
+      "keywords": ["Flyway", "校验和", "版本"],
+      "asr": "同一台库重新启动时，迁移工具会查过去的历史。旧脚本执行过的话不会再跑。要是把已用过的版本文件随手修改了，校验和就对不上。",
+      "ocr": [{"atSec": 1285, "text": "flyway_schema_history · version / checksum / success"}]
+    },
+    {
+      "id": "C23", "startSec": 1320, "title": "上传临时文件清理",
+      "summary": "完成后清理临时分片与进度数据，清理失败保留待处理状态，正式对象继续可用。",
+      "keywords": ["MinIO", "清理", "临时对象"],
+      "asr": "删的是拼接用的那些小文件。正式文件的路径不在这批清单里。只有其中一个小文件删失败，也不影响资产已经保存，把待清理的标记留下来再处理。",
+      "ocr": [{"atSec": 1345, "text": "cleanup_pending · parts/ · assets/"}]
+    },
+    {
+      "id": "C24", "startSec": 1380, "title": "存储职责总览",
+      "summary": "MySQL 保存持久记录，MinIO 保存视频对象，Redis 用于短期上传进度。",
+      "keywords": ["MySQL", "MinIO", "Redis"],
+      "asr": "最后看这张图，数据库记资产和任务结果，对象存储放媒体，缓存这一栏是上传过程的几个临时状态。三个位置都认识了，排错时才能知道该去哪查。",
+      "ocr": [{"atSec": 1410, "text": "MySQL: facts · MinIO: media · Redis: temporary progress"}]
+    }
+  ],
+  "queries": [
+    {"id":"Q01","kind":"同义","question":"我点提交后连接断掉，再回来还能接着用第一次那个会话吗？","keywords":["初始化","会话","响应丢失"],"visualKeywords":[],"expected":["C02"]},
+    {"id":"Q02","kind":"同义","question":"缓存过期了，之前已经存好的视频是不是也找不回来了？","keywords":["缓存","资产","过期"],"visualKeywords":["TTL"],"expected":["C05"]},
+    {"id":"Q03","kind":"同义","question":"点完解析立刻拿到的回包说明文字已经准备好了吗？","keywords":["解析","受理","文字"],"visualKeywords":[],"expected":["C09"]},
+    {"id":"Q04","kind":"同义","question":"只闪一下的幻灯片内容为什么没被检索到？","keywords":["画面","抽样","遗漏"],"visualKeywords":[],"expected":["C11"]},
+    {"id":"Q05","kind":"同义","question":"一个外部请求都发出去了，结果还不清楚，为何系统要我确认才敢再发？","keywords":["外部请求","不确定","计费"],"visualKeywords":[],"expected":["C13"]},
+    {"id":"Q06","kind":"同义","question":"消息服务维护完恢复了，等待中的解析能自己往下走吗？","keywords":["消息队列","排队","恢复"],"visualKeywords":[],"expected":["C14"]},
+    {"id":"Q07","kind":"同义","question":"旧工作者比替补晚写完，最终文字会被它盖掉吗？","keywords":["工作者","覆盖","回写"],"visualKeywords":[],"expected":["C17"]},
+    {"id":"Q08","kind":"同义","question":"短暂按暂停时还在传输的那一片，点继续之后一定会重传吗？","keywords":["暂停","继续","分片"],"visualKeywords":[],"expected":["C08"]},
+    {"id":"Q09","kind":"代码/OCR","question":"哪段画面出现了 result_text 和 lease_token 在同一条 SQL 上？","keywords":["回写","SQL"],"visualKeywords":["result_text","lease_token"],"expected":["C17"]},
+    {"id":"Q10","kind":"代码/OCR","question":"HTTP 206 和 Content-Range 在视频的哪个环节出现？","keywords":["HTTP","部分内容"],"visualKeywords":["206","Content-Range"],"expected":["C07"]},
+    {"id":"Q11","kind":"代码/OCR","question":"哪一段改成逐对 field、value 调用 HSET？","keywords":["逐字段","哈希"],"visualKeywords":["HSET","field","value"],"expected":["C20"]},
+    {"id":"Q12","kind":"代码/OCR","question":"哪一页同时讲到删除 parts/ 和保留 assets/？","keywords":["清理","保留"],"visualKeywords":["parts/","assets/"],"expected":["C23"]},
+    {"id":"Q13","kind":"代码/OCR","question":"老师在哪儿贴出了 -ar 16000 -ac 1 这条参数？","keywords":["参数"],"visualKeywords":["-ar 16000","-ac 1"],"expected":["C10"]},
+    {"id":"Q14","kind":"代码/OCR","question":"flyway_schema_history 的 checksum 是在哪里演示的？","keywords":["迁移","校验和"],"visualKeywords":["flyway_schema_history","checksum"],"expected":["C22"]},
+    {"id":"Q15","kind":"代码/OCR","question":"哪帧有 AbortController.abort()，调用之后怎么继续？","keywords":["取消","继续"],"visualKeywords":["AbortController.abort()"],"expected":["C08"]},
+    {"id":"Q16","kind":"近似概念","question":"两个不同文件重名且长度相等，如何避免把分片接错？","keywords":["续传","文件指纹","分片"],"visualKeywords":[],"expected":["C06"]},
+    {"id":"Q17","kind":"近似概念","question":"对象已经合并但保存资产的事务失败了，重试时从哪里继续？","keywords":["对象","合并","资产","失败"],"visualKeywords":[],"expected":["C04"]},
+    {"id":"Q18","kind":"近似概念","question":"画面完全没写字但识别接口正常，这算 OCR 失败还是成功？","keywords":["空结果","OCR","成功"],"visualKeywords":[],"expected":["C12"]},
+    {"id":"Q19","kind":"近似概念","question":"Broker 已经收到但本地没记下发送成功，为什么不意味着再识别一次？","keywords":["回执","重复投递","消费"],"visualKeywords":[],"expected":["C15"]},
+    {"id":"Q20","kind":"多证据","question":"消息重复派发时，如何避免两个消费者都开始识别，又如何挡住旧执行者晚到的结果？","keywords":["消费者","领取","旧执行","回写"],"visualKeywords":[],"expected":["C16","C17"]},
+    {"id":"Q21","kind":"多证据","question":"ASR 一直没回包和工作者一直没续租时，为什么这两种场景都要确认再重跑语音？","keywords":["ASR","不确定","过期","确认"],"visualKeywords":[],"expected":["C13","C18"]},
+    {"id":"Q22","kind":"多证据","question":"上传会话怎样保证并发只创建一次，浏览器刷新后又凭什么找回它？","keywords":["上传会话","并发","请求键","刷新"],"visualKeywords":[],"expected":["C01","C02"]},
+    {"id":"Q23","kind":"多证据","question":"派发字段为什么从原表挪走，已有识别记录在升级中是怎么保留的？","keywords":["合表","迁移","历史文字","回填"],"visualKeywords":[],"expected":["C19","C21"]},
+    {"id":"Q24","kind":"无答案","question":"老师给了 Kafka Broker 的分区副本数配置建议吗？","keywords":["Kafka","分区","副本数"],"visualKeywords":[],"expected":[]},
+    {"id":"Q25","kind":"无答案","question":"Tesseract 对这套真实课程 PPT 的准确率是多少？","keywords":["OCR","准确率","PPT"],"visualKeywords":["Tesseract"],"expected":[]}
+  ]
+}
